@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include QMK_KEYBOARD_H
-#include <math.h>
 #include "rgblight.h"
 #include "matrixled.h"
 
@@ -9,23 +8,29 @@
 # error please disable RGBLIGHT_ANIMATIONS, check ./rules.mk: LED_ANIMATIONS = no
 #endif
 
-#define MIN(a,b)            (((a) < (b)) ? (a) : (b))
-#define MAX(a,b)            (((a) > (b)) ? (a) : (b))
-#define SQUARE(x)           ((x) * (x))
-#define HUE_BIN2DEC(x)      ((x) * (360.f/256.f))
-#define HUE_DEG2BIN(x)      ((x) * (256.f/360.f))
-
-extern rgblight_config_t rgblight_config;
-extern uint8_t is_master;
-
-#define rgblight_led        (*rgblight_led_ptr)
-static LED_TYPE (* const rgblight_led_ptr)[RGBLED_NUM] = &led;
-
+// configure
 #define DRAW_EXCLUSIVE_TIME     10  /* ms */
 #define REFRESH_EXCLUSIVE_TIME  20  /* ms */
 #define DECAY_TIME              500 /* ms */
 #define RING_WIDTH              5   /* cell */
+#define LED_HUE_STEP            150 /* deg */
 
+#define MIN(a,b)            (((a) < (b)) ? (a) : (b))
+#define MAX(a,b)            (((a) > (b)) ? (a) : (b))
+#define SQUARE(x)           ((x) * (x))
+#define HUE_BIN2DEG(x)      ((x) * (360.f/256.f))
+#define HUE_DEG2BIN(x)      ((x) * (256.f/360.f))
+
+// External parameter from matrix.c
+extern uint8_t is_master;
+
+// External parameter from rgblight.c
+extern rgblight_config_t rgblight_config;
+extern LED_TYPE led[RGBLED_NUM];
+#define rgblight_led        (*rgblight_led_ptr)
+static LED_TYPE (* const rgblight_led_ptr)[RGBLED_NUM] = &led;
+
+// Lighting pattern name
 enum as_led_mode {
     LM_SWITCH = 1,
     LM_SWITCH_RB,
@@ -37,14 +42,14 @@ enum as_led_mode {
     LM_CROSS_RB,
     LM_NUM
 };
+
 struct as_led_status {
   struct {
     uint8_t hue_bin;
     uint8_t val;
-  } led[RGBLED_NUM];
+  } led_hv[RGBLED_NUM];
   enum as_led_mode mode;
 } matled_status;
-static uint16_t const LED_HUE_STEP = 150;
 
 #define PRESSED_LIST_NUM      (8)
 static struct as_pressed {
@@ -120,7 +125,7 @@ void matled_mode_forward(void)
     pressed_list[idx].count = 0u;
   }
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led[idx].val = 0u;
+    matled_status.led_hv[idx].val = 0u;
     rgblight_led[idx].r = 0u;
     rgblight_led[idx].g = 0u;
     rgblight_led[idx].b = 0u;
@@ -139,7 +144,7 @@ void matled_toggle(void)
     pressed_list[idx].count = 0u;
   }
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led[idx].val = 0u;
+    matled_status.led_hv[idx].val = 0u;
     rgblight_led[idx].r = 0u;
     rgblight_led[idx].g = 0u;
     rgblight_led[idx].b = 0u;
@@ -154,11 +159,11 @@ void matled_event_pressed(keyrecord_t *record)
     return;
   }
 
-  if ( matled_status.mode >= LM_NUM ) {
+  uint8_t led_mode = matled_status.mode;
+  if ( led_mode >= LM_NUM ) {
     // nothing mode
   }
   else {
-    uint8_t led_mode = matled_status.mode;
     if ( function_table[led_mode].post_keypos != NULL ) {
       function_table[led_mode].post_keypos(record->event.key);
     }
@@ -180,8 +185,8 @@ static void post_keypos_to_matled(keypos_t keypos)
     uint16_t hue_bin = HUE_DEG2BIN(rgblight_config.hue);
     uint8_t led_val  = rgblight_config.val;
 
-    matled_status.led[led_idx].hue_bin = hue_bin;
-    matled_status.led[led_idx].val = led_val;
+    matled_status.led_hv[led_idx].hue_bin = hue_bin;
+    matled_status.led_hv[led_idx].val = led_val;
   }
 }
 
@@ -222,9 +227,9 @@ static void matled_draw(void)
   }
 
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    uint16_t led_hue = HUE_BIN2DEC(matled_status.led[idx].hue_bin);
+    uint16_t led_hue = HUE_BIN2DEG(matled_status.led_hv[idx].hue_bin);
     uint8_t led_sat  = rgblight_config.sat;
-    uint8_t led_val  = matled_status.led[idx].val;
+    uint8_t led_val  = matled_status.led_hv[idx].val;
     sethsv(led_hue, led_sat, led_val, &rgblight_led[idx]);
   }
   rgblight_set();
@@ -236,11 +241,11 @@ void matled_refresh(void)
     return;
   }
 
-  if (matled_status.mode >= LM_NUM) {
+  uint8_t led_mode = matled_status.mode;
+  if (led_mode >= LM_NUM) {
     // nothing mode
   }
   else {
-    uint8_t led_mode = matled_status.mode;
     if ( function_table[led_mode].refresh != NULL ) {
       function_table[led_mode].refresh();
     }
@@ -260,8 +265,8 @@ static void matled_refresh_SWITCH(void)
   FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
     int led_idx = get_ledidx_from_keypos( (keypos_t){.row = row, .col = col} );
     if ( led_idx >= 0 && !matrix_is_on( row, col ) ) {
-      matled_status.led[led_idx].hue_bin = 0u;
-      matled_status.led[led_idx].val = 0u;
+      matled_status.led_hv[led_idx].hue_bin = 0u;
+      matled_status.led_hv[led_idx].val = 0u;
     }
   }
 }
@@ -273,7 +278,7 @@ static void matled_refresh_DIMLY(void)
   FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
     int led_idx = get_ledidx_from_keypos( (keypos_t){.row = row, .col = col} );
     if ( led_idx >= 0 && !matrix_is_on( row, col ) ) {
-      matled_status.led[led_idx].val = MAX(0, matled_status.led[led_idx].val - led_decay_val);
+      matled_status.led_hv[led_idx].val = MAX(0, matled_status.led_hv[led_idx].val - led_decay_val);
     }
   }
 }
@@ -285,7 +290,7 @@ static void matled_refresh_RIPPLE(void)
   float const LINER_INTERCEPT = rgblight_config.val;
 
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led[idx].val = 0u;
+    matled_status.led_hv[idx].val = 0u;
   }
 
   int const END_IDX = pressed_end;
@@ -305,8 +310,8 @@ static void matled_refresh_RIPPLE(void)
         int square_dist = SQUARE(it_source_pos->key.row - row) + SQUARE(it_source_pos->key.col - col);
         if ( (square_dist <= SQUARE(top_dist)) && (square_dist >= SQUARE(end_dist)) ) {
           int dist = sqrt(square_dist);
-          matled_status.led[led_idx].hue_bin = it_source_pos->hue_bin;
-          matled_status.led[led_idx].val     = LINER_SLOPE * (top_dist - dist) + LINER_INTERCEPT;
+          matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
+          matled_status.led_hv[led_idx].val     = LINER_SLOPE * (top_dist - dist) + LINER_INTERCEPT;
           redraw = true;
         }
       }
@@ -324,7 +329,7 @@ static void matled_refresh_CROSS(void)
   float const LINER_INTERCEPT = rgblight_config.val;
 
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led[idx].val = 0u;
+    matled_status.led_hv[idx].val = 0u;
   }
 
   int const END_IDX = pressed_end;
@@ -347,8 +352,8 @@ static void matled_refresh_CROSS(void)
         int square_dist = SQUARE(it_source_pos->key.row - row) + SQUARE(it_source_pos->key.col - col);
         if ( (square_dist <= SQUARE(top_dist)) && (square_dist >= SQUARE(end_dist)) ) {
           int dist = sqrt(square_dist);
-          matled_status.led[led_idx].hue_bin = it_source_pos->hue_bin;
-          matled_status.led[led_idx].val     = LINER_SLOPE * (top_dist - dist) + LINER_INTERCEPT;
+          matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
+          matled_status.led_hv[led_idx].val     = LINER_SLOPE * (top_dist - dist) + LINER_INTERCEPT;
           redraw = true;
         }
       }
