@@ -74,7 +74,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
       KC_TAB,        KC_Q,     KC_W,   KC_E,      KC_R,    KC_T,                      KC_Y,    KC_U,    KC_I,    KC_O,    KC_P, _______, \
       OSM_LCTL,      KC_A,     KC_S,   KC_D,      KC_F,    KC_G,                      KC_H,    KC_J,    KC_K,    KC_L, KC_SCLN, _______, \
       OSM_LSFT,      KC_Z,     KC_X,   KC_C,      KC_V,    KC_B, KC_LBRC, KC_RBRC,    KC_N,    KC_M, KC_COMM,  KC_DOT, KC_SLSH, _______, \
-      KC_ADJUST, OSM_LALT, OSM_LGUI, MO_LSW, KC_MIRROR,  MT_SAS,  KC_ENT, XXXXXXX, _______, _______, _______, _______, _______, _______ \
+      KC_ADJUST, OSM_LALT, OSM_LGUI, MO_LSW, KC_MIRROR,  MT_SAS,  KC_ENT, _______, _______, _______, _______, _______, _______, _______ \
       ),
 
   [KL_(CURSOR)] = LAYOUT( \
@@ -163,51 +163,62 @@ user_modifiler_contains_idx( enum user_modifier mod_idx )
 #define PROCESS_USUAL_BEHAVIOR      (true)
 
 static bool
+process_record_usermod(uint16_t keycode, keyrecord_t *record);
+static bool
 process_record_event(uint16_t keycode, keyrecord_t *record);
+static keypos_t
+get_keypos_converted_usermod(keyrecord_t *record);
 static keypos_t
 get_keypos_mirror(keypos_t key);
 static keypos_t
 get_keypos_slide(keypos_t key);
 
-bool process_record_user(uint16_t keycode, keyrecord_t *record)
+// override the behavior of an existing key,
+// called by QMK during key processing before the actual key event is handled.
+bool
+process_record_user(uint16_t keycode, keyrecord_t *record)
 {
-  keypos_t convert_keypos = record->event.key;
-  uint16_t convert_keycode = KC_NO;
-  if (user_modifier_bits) {
-    uint8_t layer = layer_switch_get_layer(record->event.key);
-    if ( user_modifiler_contains_idx(UM_(MIRROR)) ) {
-      convert_keypos = get_keypos_mirror(record->event.key);
-    }
-    else if ( user_modifiler_contains_idx(UM_(SLIDE)) ) {
-      convert_keypos = get_keypos_slide(record->event.key);
-    }
-    convert_keycode = keymap_key_to_keycode(layer, convert_keypos);
-    if (convert_keycode == KC_TRNS) {
-      convert_keycode = keycode;
-    }
-  }
-  else {
-    convert_keycode = keycode;
-  }
+  bool result_process;
 
-  bool result_process = process_record_event(convert_keycode, record);
-  if ( result_process == PROCESS_USUAL_BEHAVIOR ) {
-    if (convert_keycode != keycode) {
-      action_t action = store_or_get_action(record->event.pressed, convert_keypos);
-      process_action(record, action);
-      result_process = PROCESS_OVERRIDE_BEHAVIOR;
-    }
-  }
-
+  // notice keypos to matled
   if (record->event.pressed) {
     matled_event_pressed(record);
   }
 
-  return result_process;
+  // check user modifier key
+  result_process = process_record_usermod(keycode, record);
+  if (result_process == PROCESS_OVERRIDE_BEHAVIOR) {
+    return PROCESS_OVERRIDE_BEHAVIOR;
+  }
+
+  // get keypos converted by user modifiler
+  keypos_t event_key = record->event.key;
+  uint8_t layer = layer_switch_get_layer(event_key);
+  keypos_t keypos_converted = get_keypos_converted_usermod(record);
+  uint16_t keycode_converted = keymap_key_to_keycode(layer, keypos_converted);
+  if (keycode_converted == KC_TRNS) {
+    keycode_converted = keycode;
+  }
+
+  // check the event to be overridden
+  result_process = process_record_event(keycode_converted, record);
+  if (result_process == PROCESS_OVERRIDE_BEHAVIOR) {
+    return PROCESS_OVERRIDE_BEHAVIOR;
+  }
+
+  // store action from keypos converted
+  if (   (keypos_converted.row != event_key.row)
+      || (keypos_converted.col != event_key.col) ){
+    action_t action = store_or_get_action(record->event.pressed, keypos_converted);
+    process_action(record, action);
+    return PROCESS_OVERRIDE_BEHAVIOR;
+  }
+
+  return PROCESS_USUAL_BEHAVIOR;
 }
 
 static bool
-process_record_event(uint16_t keycode, keyrecord_t *record)
+process_record_usermod(uint16_t keycode, keyrecord_t *record)
 {
   switch (keycode) {
 
@@ -233,11 +244,24 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
       return PROCESS_OVERRIDE_BEHAVIOR;
     } break;
 
+    default:
+      break;
+  }
+
+  return PROCESS_USUAL_BEHAVIOR;
+}
+
+static bool
+process_record_event(uint16_t keycode, keyrecord_t *record)
+{
+  switch (keycode) {
+
 #   if defined(MATRIXLED_H)
     case RGB_TOG: if (record->event.pressed) {
       matled_toggle();
       return PROCESS_OVERRIDE_BEHAVIOR;
     } break;
+
     case RGB_SMOD: if (record->event.pressed) {
       matled_mode_forward();
       return PROCESS_OVERRIDE_BEHAVIOR;
@@ -245,10 +269,16 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
 #   endif
 
     case MO_LSW: {
-      if (!record->event.pressed) {
-        layer_state = 0u;
+      static uint32_t before_default_layer_state;
+      if (record->event.pressed) {
+        before_default_layer_state = default_layer_state;
+      }
+      else {
+        layer_clear();
         matled_eeconfig_update();
-        eeconfig_update_default_layer(default_layer_state);
+        if (before_default_layer_state != default_layer_state) {
+          eeconfig_update_default_layer(default_layer_state);
+        }
       }
       return PROCESS_USUAL_BEHAVIOR;
     } break;
@@ -258,6 +288,27 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
   }
 
   return PROCESS_USUAL_BEHAVIOR;
+ }
+
+static keypos_t
+get_keypos_converted_usermod(keyrecord_t *record)
+{
+  keypos_t keypos_converted;
+
+  if (!user_modifier_bits) {
+    keypos_converted = record->event.key;
+  }
+  else if ( user_modifiler_contains_idx(UM_(MIRROR)) ) {
+    keypos_converted = get_keypos_mirror(record->event.key);
+  }
+  else if ( user_modifiler_contains_idx(UM_(SLIDE)) ) {
+    keypos_converted = get_keypos_slide(record->event.key);
+  }
+  else {
+    keypos_converted = record->event.key;
+  }
+
+  return keypos_converted;
 }
 
 static keypos_t
@@ -303,9 +354,6 @@ void matrix_scan_user(void) {
     iota_gfx_task();  // this is what updates the display continuously
   #endif
 }
-
-// ==== OLED Display Functions ====
-#ifdef SSD1306OLED
 
 // OLED image characters
 static const char PROGMEM
@@ -459,5 +507,3 @@ userModNameStr_P( enum user_modifier mod )
 
   return (um_names_lut[mod]);
 }
-
-#endif
