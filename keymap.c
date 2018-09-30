@@ -471,7 +471,8 @@ render_status_LedParams(struct CharacterMatrix *matrix)
 
   matrix_write_P(matrix, PSTR("LedStt"));
 
-  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_mode()) > 0 ) {
+  if ( snprintf(buf, sizeof_buf, ":%c%d", (matled_get_enable() ? ' ' : '!')
+                                        , matled_get_mode()) > 0 ) {
     matrix_write(matrix, buf);
   }
 

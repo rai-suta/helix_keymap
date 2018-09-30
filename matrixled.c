@@ -119,6 +119,11 @@ int matled_get_mode(void)
   return matled_status.mode;
 }
 
+bool matled_get_enable(void)
+{
+  return rgblight_config.enable;
+}
+
 int matled_get_hue(void)
 {
   return rgblight_config.hue;
