@@ -12,7 +12,7 @@
 #define DRAW_EXCLUSIVE_TIME     10  /* ms */
 #define REFRESH_EXCLUSIVE_TIME  20  /* ms */
 #define DECAY_TIME              500 /* ms */
-#define RING_WIDTH              5   /* cell */
+#define TRACING_LEN             5   /* cell */
 #define LED_HUE_STEP            150 /* deg */
 
 #define MIN(a,b)            (((a) < (b)) ? (a) : (b))
@@ -117,6 +117,21 @@ void matled_eeconfig_update(void)
 int matled_get_mode(void)
 {
   return matled_status.mode;
+}
+
+int matled_get_hue(void)
+{
+  return rgblight_config.hue;
+}
+
+int matled_get_sat(void)
+{
+  return rgblight_config.sat;
+}
+
+int matled_get_val(void)
+{
+  return rgblight_config.val;
 }
 
 void matled_mode_forward(void)
@@ -286,7 +301,7 @@ static void matled_refresh_DIMLY(void)
 static void matled_refresh_RIPPLE(void)
 {
   uint16_t const DECAY_COUNT  = 1.f * DECAY_TIME / REFRESH_EXCLUSIVE_TIME;
-  float const LINER_SLOPE     = -(rgblight_config.val / RING_WIDTH);
+  float const LINER_SLOPE     = -(rgblight_config.val / TRACING_LEN);
   float const LINER_INTERCEPT = rgblight_config.val;
 
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
@@ -300,7 +315,7 @@ static void matled_refresh_RIPPLE(void)
     if ( it_source_pos->count > 0u ) {
       it_source_pos->count++;
       int top_dist = HELIX_COLS * (1.f * it_source_pos->count / DECAY_COUNT);
-      int end_dist = MAX(0, top_dist - RING_WIDTH);
+      int end_dist = MAX(0, top_dist - TRACING_LEN);
       bool redraw = false;
       FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
         int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
@@ -325,7 +340,7 @@ static void matled_refresh_RIPPLE(void)
 static void matled_refresh_CROSS(void)
 {
   uint16_t const DECAY_COUNT  = 1.f * DECAY_TIME / REFRESH_EXCLUSIVE_TIME;
-  float const LINER_SLOPE     = -(rgblight_config.val / RING_WIDTH);
+  float const LINER_SLOPE     = -(rgblight_config.val / TRACING_LEN);
   float const LINER_INTERCEPT = rgblight_config.val;
 
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
@@ -339,7 +354,7 @@ static void matled_refresh_CROSS(void)
     if ( it_source_pos->count > 0u ) {
       it_source_pos->count++;
       int top_dist = HELIX_COLS * (1.f * it_source_pos->count / DECAY_COUNT);
-      int end_dist = MAX(0, top_dist - RING_WIDTH);
+      int end_dist = MAX(0, top_dist - TRACING_LEN);
       bool redraw = false;
       FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
         if ( (it_source_pos->key.row != row) && (it_source_pos->key.col != col) ) {

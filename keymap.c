@@ -393,7 +393,7 @@ render_status_Layer(struct CharacterMatrix *matrix);
 static void
 render_status_UserMod(struct CharacterMatrix *matrix);
 static void
-render_status_LedMode(struct CharacterMatrix *matrix);
+render_status_LedParams(struct CharacterMatrix *matrix);
 
 static void
 matrix_update(struct CharacterMatrix *dest,
@@ -422,7 +422,7 @@ render_status(struct CharacterMatrix *matrix)
   uint32_t layer = layer_state | default_layer_state;
   if ( layer & (1<<KL_(CONFIG)) ) {
     matrix_write_P(matrix, PSTR("\n"));
-    render_status_LedMode(matrix);
+    render_status_LedParams(matrix);
   }
 }
 
@@ -464,13 +464,28 @@ render_status_UserMod(struct CharacterMatrix *matrix)
 }
 
 static void
-render_status_LedMode(struct CharacterMatrix *matrix)
+render_status_LedParams(struct CharacterMatrix *matrix)
 {
   char buf[16];
+  const size_t sizeof_buf = sizeof(buf);
 
-  matrix_write_P(matrix, PSTR("LedMode:"));
-  itoa(matled_get_mode(), buf, 10);
-  matrix_write(matrix, buf);
+  matrix_write_P(matrix, PSTR("LedStt"));
+
+  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_mode()) > 0 ) {
+    matrix_write(matrix, buf);
+  }
+
+  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_hue()) > 0 ) {
+    matrix_write(matrix, buf);
+  }
+
+  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_sat()) > 0 ) {
+    matrix_write(matrix, buf);
+  }
+
+  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_val()) > 0 ) {
+    matrix_write(matrix, buf);
+  }
 }
 
 static void

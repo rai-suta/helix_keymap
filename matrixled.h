@@ -7,6 +7,9 @@
   void matled_init(void);
   void matled_eeconfig_update(void);
   int matled_get_mode(void);
+  int matled_get_hue(void);
+  int matled_get_sat(void);
+  int matled_get_val(void);
   void matled_mode_forward(void);
   void matled_toggle(void);
   void matled_refresh(void);
