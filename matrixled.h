@@ -13,6 +13,7 @@
   int matled_get_val(void);
   void matled_mode_forward(void);
   void matled_toggle(void);
+  void matled_default_config(void);
   void matled_refresh(void);
   void matled_event_pressed(keyrecord_t *record);
 #else

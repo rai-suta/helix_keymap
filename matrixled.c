@@ -78,6 +78,7 @@ static void post_keypos_to_matled(const keypos_t key_pos);
 static void post_keypos_to_queueing(const keypos_t key_pos);
 
 static void matled_draw(void);
+static void matled_clear(void);
 
 static void matled_refresh_SWITCH(void);
 static void matled_refresh_DIMLY(void);
@@ -86,7 +87,7 @@ static void matled_refresh_CROSS(void);
 
 static int get_ledidx_from_keypos( keypos_t keypos );
 
-static struct {
+static const struct {
   void (*update_color)(void);
   void (*post_keypos)(keypos_t key_pos);
   void (*matled_refresh)(void);
@@ -105,15 +106,8 @@ void matled_init(void)
 {
   rgblight_config.raw = eeconfig_read_rgblight();
   matled_status.mode = rgblight_config.mode;
-  matled_draw();
-}
 
-void matled_eeconfig_update(void)
-{
-  if (matled_status.mode != rgblight_config.mode) {
-    rgblight_config.mode = matled_status.mode;
-    eeconfig_update_rgblight(rgblight_config.raw);
-  }
+  matled_clear();
 }
 
 int matled_get_mode(void)
@@ -143,39 +137,18 @@ int matled_get_val(void)
 
 void matled_mode_forward(void)
 {
-  // reset current parameters
-  matled_status.hue_rnd = 0u;
-  for ( int idx = 0; idx < PRESSED_LIST_NUM; idx++ ) {
-    pressed_list[idx].count = 0u;
-  }
-  for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led_hv[idx].val = 0u;
-    rgblight_led[idx].r = 0u;
-    rgblight_led[idx].g = 0u;
-    rgblight_led[idx].b = 0u;
-  }
-  rgblight_set();
-
-  // increment mode
   matled_status.mode = (matled_status.mode + 1) % LM_NUM;
   if ( matled_status.mode == 0 ) {
     matled_status.mode++;
   }
+  rgblight_config.mode = matled_status.mode;
+  eeconfig_update_rgblight(rgblight_config.raw);
+
+  matled_clear();
 }
 
 void matled_toggle(void)
 {
-  for ( int idx = 0; idx < PRESSED_LIST_NUM; idx++ ) {
-    pressed_list[idx].count = 0u;
-  }
-  for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led_hv[idx].val = 0u;
-    rgblight_led[idx].r = 0u;
-    rgblight_led[idx].g = 0u;
-    rgblight_led[idx].b = 0u;
-  }
-  rgblight_set();
-
   if (rgblight_config.enable) {
     matled_status.hue_rnd = 0u;
     rgblight_disable();
@@ -183,6 +156,14 @@ void matled_toggle(void)
   else {
     rgblight_enable();
   }
+
+  matled_clear();
+}
+
+void matled_default_config(void)
+{
+  eeconfig_update_rgblight_default();
+  matled_init();
 }
 
 void matled_event_pressed(keyrecord_t *record)
@@ -263,6 +244,25 @@ static void matled_draw(void)
     uint8_t led_sat  = rgblight_config.sat;
     uint8_t led_val  = matled_status.led_hv[idx].val;
     sethsv(led_hue, led_sat, led_val, &rgblight_led[idx]);
+  }
+  rgblight_set();
+}
+
+static void matled_clear(void)
+{
+  matled_status.hue_rnd = 0u;
+  for ( int idx = 0; idx < PRESSED_LIST_NUM; idx++ ) {
+    pressed_list[idx].count = 0u;
+  }
+  for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
+    matled_status.led_hv[idx].val = 0u;
+    rgblight_led[idx].r = 0u;
+    rgblight_led[idx].g = 0u;
+    rgblight_led[idx].b = 0u;
+  }
+
+  if ( !task_timing_check(&draw_task) ) {
+    return;
   }
   rgblight_set();
 }
@@ -413,8 +413,8 @@ static int get_ledidx_from_keypos( keypos_t keypos )
     keypos_is_valid = (keypos.row < HELIX_ROWS) && (keypos.col < HELIX_COLS);
   }
   else {
-    keypos_is_valid = (HELIX_COLS <= keypos.col)
-                   && (keypos.row < MATRIX_ROWS) && (keypos.col < MATRIX_COLS);
+    keypos_is_valid = (HELIX_ROWS <= keypos.row) && (keypos.row < MATRIX_ROWS)
+                                                 && (keypos.col < MATRIX_COLS);
   }
   if ( !keypos_is_valid ) {
     return -1;

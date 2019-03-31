@@ -19,8 +19,7 @@ extern uint8_t is_master;
     func(QWERTY),   \
     func(CURSOR),   \
     func(MEDIA),    \
-    func(CONFIG),   \
-    func(LAYER_SW)
+    func(CONFIG)
 
 // Index of keymap layer
 // e.g.: keymaps[KL_(<NAME>)]
@@ -32,9 +31,8 @@ enum keymap_layer {
 
 enum custom_keycodes {
   KC_LAYER = SAFE_RANGE,
-  KC_MIRROR,
-  KC_SLIDE,
-  KC_ADJUST
+  KC_ADJUST,
+  RGB_INI
 };
 
 #define _______ KC_TRNS
@@ -65,7 +63,7 @@ enum custom_keycodes {
 #define DF_MEDI   DF(KL_(MEDIA))
 // Set layer_state
 #define TO_CONF   TO(KL_(CONFIG))
-#define MO_LSW    MO(KL_(LAYER_SW))
+#define MO_CONF   MO(KL_(CONFIG))
 
 #if HELIX_ROWS == 5
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
@@ -74,7 +72,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
       KC_TAB,        KC_Q,     KC_W,   KC_E,      KC_R,    KC_T,                      KC_Y,    KC_U,    KC_I,    KC_O,    KC_P, _______, \
       OSM_LCTL,      KC_A,     KC_S,   KC_D,      KC_F,    KC_G,                      KC_H,    KC_J,    KC_K,    KC_L, KC_SCLN, _______, \
       OSM_LSFT,      KC_Z,     KC_X,   KC_C,      KC_V,    KC_B, KC_LBRC, KC_RBRC,    KC_N,    KC_M, KC_COMM,  KC_DOT, KC_SLSH, _______, \
-      KC_ADJUST, OSM_LALT, OSM_LGUI, MO_LSW, KC_MIRROR,  MT_SAS,  KC_ENT, _______, _______, _______, _______, _______, _______, _______ \
+      KC_ADJUST, OSM_LALT, OSM_LGUI,MO_CONF,    MT_SAS,  MT_SAS,  KC_ENT, _______, _______, _______, _______, _______, _______, _______ \
       ),
 
   [KL_(CURSOR)] = LAYOUT( \
@@ -82,7 +80,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
       _______,  KC_ESC,  KC_TOP, KC_BTTM,  XXXXXXX, XXXXXXX,                   XXXXXXX, KC_HOME,  KC_END, XXXXXXX, XXXXXXX, _______, \
       _______, KC_LEFT,   KC_UP, KC_DOWN,  KC_RGHT, XXXXXXX,                    KC_MBW, KC_PGUP, KC_PGDN,  KC_MFW, XXXXXXX, _______, \
       _______, XXXXXXX, XXXXXXX, XXXXXXX,  XXXXXXX, XXXXXXX, XXXXXXX, _______, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, _______, \
-      _______, _______, _______,  MO_LSW, KC_SLIDE, _______, _______, _______, _______, _______, _______, _______, _______, _______ \
+      _______, _______, _______, MO_CONF,  _______, _______, _______, _______, _______, _______, _______, _______, _______, _______ \
       ),
 
   [KL_(MEDIA)] = LAYOUT( \
@@ -90,23 +88,15 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
        KC_TAB, XXXXXXX, KC_MPRV, KC_MNXT, XXXXXXX, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
       XXXXXXX, KC_MRWD, KC_MSTP, KC_MPLY, KC_MFFD, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
       XXXXXXX, KC_MUTE, KC_VOLD, KC_VOLU, KC_EJCT, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, XXXXXXX, XXXXXXX,  MO_LSW, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX \
+      XXXXXXX, XXXXXXX, XXXXXXX, MO_CONF, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX \
       ),
 
   [KL_(CONFIG)] = LAYOUT( \
       XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-       KC_TAB, RGB_TOG, RGB_HUI, RGB_SAI, RGB_VAI, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, RGB_SMOD,RGB_HUD, RGB_SAD, RGB_VAD, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, XXXXXXX, XXXXXXX,  MO_LSW, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX \
-      ),
-
-  [KL_(LAYER_SW)] = LAYOUT( \
-      XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, DF_QWRT, DF_CURS, DF_MEDI, TO_CONF, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-      XXXXXXX, XXXXXXX, XXXXXXX,  MO_LSW, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX \
+       KC_TAB, RGB_TOG, RGB_HUI, RGB_SAI, RGB_VAI, RGB_INI,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
+      XXXXXXX, RGB_MOD, RGB_HUD, RGB_SAD, RGB_VAD, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
+      XXXXXXX, DF_QWRT, DF_CURS, DF_MEDI, TO_CONF, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
+      XXXXXXX, XXXXXXX, XXXXXXX, MO_CONF, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX \
       ),
 
 };
@@ -162,16 +152,9 @@ user_modifiler_contains_idx( enum user_modifier mod_idx )
 #define PROCESS_OVERRIDE_BEHAVIOR   (false)
 #define PROCESS_USUAL_BEHAVIOR      (true)
 
-static bool
-process_record_usermod(uint16_t keycode, keyrecord_t *record);
+static keyrecord_t last_keyrecord;
 static bool
 process_record_event(uint16_t keycode, keyrecord_t *record);
-static keypos_t
-get_keypos_converted_usermod(keyrecord_t *record);
-static keypos_t
-get_keypos_mirror(keypos_t key);
-static keypos_t
-get_keypos_slide(keypos_t key);
 
 // override the behavior of an existing key,
 // called by QMK during key processing before the actual key event is handled.
@@ -180,72 +163,17 @@ process_record_user(uint16_t keycode, keyrecord_t *record)
 {
   bool result_process;
 
+  last_keyrecord = *record;
+
   // notice keypos to matled
   if (record->event.pressed) {
     matled_event_pressed(record);
   }
 
-  // check user modifier key
-  result_process = process_record_usermod(keycode, record);
-  if (result_process == PROCESS_OVERRIDE_BEHAVIOR) {
-    return PROCESS_OVERRIDE_BEHAVIOR;
-  }
-
-  // get keypos converted by user modifiler
-  keypos_t event_key = record->event.key;
-  uint8_t layer = layer_switch_get_layer(event_key);
-  keypos_t keypos_converted = get_keypos_converted_usermod(record);
-  uint16_t keycode_converted = keymap_key_to_keycode(layer, keypos_converted);
-  if (keycode_converted == KC_TRNS) {
-    keycode_converted = keycode;
-  }
-
   // check the event to be overridden
-  result_process = process_record_event(keycode_converted, record);
+  result_process = process_record_event(keycode, record);
   if (result_process == PROCESS_OVERRIDE_BEHAVIOR) {
     return PROCESS_OVERRIDE_BEHAVIOR;
-  }
-
-  // store action from keypos converted
-  if (   (keypos_converted.row != event_key.row)
-      || (keypos_converted.col != event_key.col) ){
-    action_t action = store_or_get_action(record->event.pressed, keypos_converted);
-    process_action(record, action);
-    return PROCESS_OVERRIDE_BEHAVIOR;
-  }
-
-  return PROCESS_USUAL_BEHAVIOR;
-}
-
-static bool
-process_record_usermod(uint16_t keycode, keyrecord_t *record)
-{
-  switch (keycode) {
-
-    case KC_MIRROR: {
-      if (record->event.pressed) {
-        user_modifier_on(UM_(MIRROR));
-      }
-      else {
-        user_modifier_off(UM_(MIRROR));
-        clear_keyboard();
-      }
-      return PROCESS_OVERRIDE_BEHAVIOR;
-    } break;
-
-    case KC_SLIDE: {
-      if (record->event.pressed) {
-        user_modifier_on(UM_(SLIDE));
-      }
-      else {
-        user_modifier_off(UM_(SLIDE));
-        clear_keyboard();
-      }
-      return PROCESS_OVERRIDE_BEHAVIOR;
-    } break;
-
-    default:
-      break;
   }
 
   return PROCESS_USUAL_BEHAVIOR;
@@ -262,20 +190,24 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
       return PROCESS_OVERRIDE_BEHAVIOR;
     } break;
 
-    case RGB_SMOD: if (record->event.pressed) {
+    case RGB_MOD: if (record->event.pressed) {
       matled_mode_forward();
+      return PROCESS_OVERRIDE_BEHAVIOR;
+    } break;
+
+    case RGB_INI: if (record->event.pressed) {
+      matled_default_config();
       return PROCESS_OVERRIDE_BEHAVIOR;
     } break;
 #   endif
 
-    case MO_LSW: {
+    case MO_CONF: {
       static uint32_t before_default_layer_state;
       if (record->event.pressed) {
         before_default_layer_state = default_layer_state;
       }
       else {
         layer_clear();
-        matled_eeconfig_update();
         if (before_default_layer_state != default_layer_state) {
           eeconfig_update_default_layer(default_layer_state);
         }
@@ -289,55 +221,6 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
 
   return PROCESS_USUAL_BEHAVIOR;
  }
-
-static keypos_t
-get_keypos_converted_usermod(keyrecord_t *record)
-{
-  keypos_t keypos_converted;
-
-  if (!user_modifier_bits) {
-    keypos_converted = record->event.key;
-  }
-  else if ( user_modifiler_contains_idx(UM_(MIRROR)) ) {
-    keypos_converted = get_keypos_mirror(record->event.key);
-  }
-  else if ( user_modifiler_contains_idx(UM_(SLIDE)) ) {
-    keypos_converted = get_keypos_slide(record->event.key);
-  }
-  else {
-    keypos_converted = record->event.key;
-  }
-
-  return keypos_converted;
-}
-
-static keypos_t
-get_keypos_mirror(keypos_t key)
-{
-  keypos_t convert_key = {
-    .row = (key.row + HELIX_ROWS) % MATRIX_ROWS,
-#ifndef FLIP_HALF
-    .col = key.col,
-#else
-    .col = (MATRIX_COLS-1) - key.col,
-#endif
-  };
-  return convert_key;
-}
-
-static keypos_t
-get_keypos_slide(keypos_t key)
-{
-  keypos_t convert_key = {
-    .row = (key.row + HELIX_ROWS) % MATRIX_ROWS,
-#ifndef FLIP_HALF
-    .col = (MATRIX_COLS-1) - key.col,
-#else
-    .col = key.col,
-#endif
-  };
-  return convert_key;
-}
 
 //keyboard start-up code. Runs once when the firmware starts up.
 void matrix_init_user(void) {
@@ -405,9 +288,9 @@ void iota_gfx_task_user(void)
   struct CharacterMatrix matrix;
 
   matrix_clear(&matrix);
-  if(is_master){
+  //if(is_master){
     render_status(&matrix);
-  }
+  //}
   matrix_update(&display, &matrix);
 }
 
