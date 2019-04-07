@@ -12,7 +12,10 @@
 
 #include "matrixled.h"
 
-extern uint8_t is_master;
+#ifdef RGBLIGHT_ENABLE
+// Following line allows macro to read current RGB settings
+extern rgblight_config_t rgblight_config;
+#endif
 
 // Keymap layer names
 #define APPLY_LAYER_NAMES( func ) \
@@ -32,7 +35,7 @@ enum keymap_layer {
 enum custom_keycodes {
   KC_LAYER = SAFE_RANGE,
   KC_ADJUST,
-  RGB_INI
+  RGBRST
 };
 
 #define _______ KC_TRNS
@@ -93,7 +96,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
   [KL_(CONFIG)] = LAYOUT( \
       XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
-       KC_TAB, RGB_TOG, RGB_HUI, RGB_SAI, RGB_VAI, RGB_INI,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
+       KC_TAB, RGB_TOG, RGB_HUI, RGB_SAI, RGB_VAI,  RGBRST,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
       XXXXXXX, RGB_MOD, RGB_HUD, RGB_SAD, RGB_VAD, XXXXXXX,                   XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
       XXXXXXX, DF_QWRT, DF_CURS, DF_MEDI, TO_CONF, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, \
       XXXXXXX, XXXXXXX, XXXXXXX, MO_CONF, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX, XXXXXXX \
@@ -165,16 +168,19 @@ process_record_user(uint16_t keycode, keyrecord_t *record)
 
   last_keyrecord = *record;
 
-  // notice keypos to matled
-  if (record->event.pressed) {
-    matled_event_pressed(record);
-  }
-
   // check the event to be overridden
   result_process = process_record_event(keycode, record);
   if (result_process == PROCESS_OVERRIDE_BEHAVIOR) {
     return PROCESS_OVERRIDE_BEHAVIOR;
   }
+
+  #if defined(MATRIXLED_H)
+    // notice keypos to matled
+    result_process = matled_record_event(keycode, record);
+    if (result_process == PROCESS_OVERRIDE_BEHAVIOR) {
+      return PROCESS_OVERRIDE_BEHAVIOR;
+    }
+  #endif
 
   return PROCESS_USUAL_BEHAVIOR;
 }
@@ -184,22 +190,15 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
 {
   switch (keycode) {
 
-#   if defined(MATRIXLED_H)
-    case RGB_TOG: if (record->event.pressed) {
-      matled_toggle();
-      return PROCESS_OVERRIDE_BEHAVIOR;
+    case RGBRST: if (record->event.pressed) {
+    #if defined(RGBLIGHT_ENABLE)
+      eeconfig_update_rgblight_default();
+      rgblight_enable();
+    #endif
+    #if defined(MATRIXLED_H)
+      matled_init();
+    #endif
     } break;
-
-    case RGB_MOD: if (record->event.pressed) {
-      matled_mode_forward();
-      return PROCESS_OVERRIDE_BEHAVIOR;
-    } break;
-
-    case RGB_INI: if (record->event.pressed) {
-      matled_default_config();
-      return PROCESS_OVERRIDE_BEHAVIOR;
-    } break;
-#   endif
 
     case MO_CONF: {
       static uint32_t before_default_layer_state;
@@ -224,7 +223,9 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
 
 //keyboard start-up code. Runs once when the firmware starts up.
 void matrix_init_user(void) {
-  matled_init();
+  #if defined(MATRIXLED_H)
+    matled_init();
+  #endif
   //SSD1306 OLED init, make sure to add #define SSD1306OLED in config.h
   #ifdef SSD1306OLED
     iota_gfx_init(!has_usb());   // turns on the display
@@ -232,7 +233,9 @@ void matrix_init_user(void) {
 }
 
 void matrix_scan_user(void) {
-  matled_refresh();
+  #if defined(MATRIXLED_H)
+    matled_refresh_task();
+  #endif
   #ifdef SSD1306OLED
     iota_gfx_task();  // this is what updates the display continuously
   #endif
@@ -288,9 +291,9 @@ void iota_gfx_task_user(void)
   struct CharacterMatrix matrix;
 
   matrix_clear(&matrix);
-  //if(is_master){
-    render_status(&matrix);
-  //}
+
+  render_status(&matrix);
+
   matrix_update(&display, &matrix);
 }
 
@@ -354,22 +357,29 @@ render_status_LedParams(struct CharacterMatrix *matrix)
 
   matrix_write_P(matrix, PSTR("LedStt"));
 
-  if ( snprintf(buf, sizeof_buf, ":%c%d", (matled_get_enable() ? ' ' : '!')
-                                        , matled_get_mode()) > 0 ) {
-    matrix_write(matrix, buf);
-  }
+  #if defined(RGBLIGHT_ENABLE)
+  # if defined(MATRIXLED_H)
+    int led_mode = matled_get_mode();
+  # else
+    int led_mode = rgblight_config.mode;
+  # endif
+    if ( snprintf(buf, sizeof_buf, ":%c%d", (rgblight_config.enable ? ' ' : '!')
+                                          , led_mode) > 0 ) {
+      matrix_write(matrix, buf);
+    }
 
-  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_hue()) > 0 ) {
-    matrix_write(matrix, buf);
-  }
+    if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.hue) > 0 ) {
+      matrix_write(matrix, buf);
+    }
 
-  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_sat()) > 0 ) {
-    matrix_write(matrix, buf);
-  }
+    if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.sat) > 0 ) {
+      matrix_write(matrix, buf);
+    }
 
-  if ( snprintf(buf, sizeof_buf, ":%d", matled_get_val()) > 0 ) {
-    matrix_write(matrix, buf);
-  }
+    if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.val) > 0 ) {
+      matrix_write(matrix, buf);
+    }
+  #endif
 }
 
 static void

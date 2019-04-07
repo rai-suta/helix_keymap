@@ -122,6 +122,6 @@ endif
 # $(info -- OPT_DEFS=$(OPT_DEFS))
 # $(info )
 
-ifeq ($(strip $(RGBLIGHT_ENABLE)), yes)
+ifeq ($(strip $(LED_ANIMATIONS)) $(strip $(RGBLIGHT_ENABLE)), no yes)
     SRC += matrixled.c
 endif

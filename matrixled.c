@@ -4,10 +4,6 @@
 #include "rgblight.h"
 #include "matrixled.h"
 
-#if defined(RGBLIGHT_ANIMATIONS)
-# error please disable RGBLIGHT_ANIMATIONS, check ./rules.mk: LED_ANIMATIONS = no
-#endif
-
 // configure
 #define DRAW_EXCLUSIVE_TIME     10  /* ms */
 #define REFRESH_EXCLUSIVE_TIME  20  /* ms */
@@ -30,47 +26,60 @@ extern LED_TYPE led[RGBLED_NUM];
 static LED_TYPE (* const rgblight_led_ptr)[RGBLED_NUM] = &led;
 
 // Lighting pattern name
-enum as_led_mode {
-    LM_SWITCH = 1,
-    LM_SWITCH_RB,
-    LM_DIMLY,
-    LM_DIMLY_RB,
-    LM_RIPPLE,
-    LM_RIPPLE_RB,
-    LM_CROSS,
-    LM_CROSS_RB,
-    LM_NUM
+enum LightingPattern {
+  LP_STATIC = 0,
+  #ifdef ENABLE_SWITCH_PATTERN
+    LP_SWITCH,
+    LP_SWITCH_RB,
+  #endif
+  #ifdef ENABLE_DIMLY_PATTERN
+    LP_DIMLY,
+    LP_DIMLY_RB,
+  #endif
+  #ifdef ENABLE_RIPPLE_PATTERN
+    LP_RIPPLE,
+    LP_RIPPLE_RB,
+  #endif
+  #ifdef ENABLE_CROSS_PATTERN
+    LP_CROSS,
+    LP_CROSS_RB,
+  #endif
+  #ifdef ENABLE_WAVE_PATTERN
+    LP_WAVE,
+    LP_WAVE_RB,
+  #endif
+  LP_NUM
 };
 
-struct as_led_status {
+struct {
   struct {
     uint8_t hue_bin;
     uint8_t val;
   } led_hv[RGBLED_NUM];
   uint8_t hue_rnd;
-  enum as_led_mode mode;
+  enum LightingPattern mode;
 } matled_status;
 
 #define PRESSED_LIST_NUM      (8)
-static struct as_pressed {
+static struct PressedRecord {
   keypos_t key;
   uint8_t hue_bin;
   uint16_t count;
 } pressed_list[PRESSED_LIST_NUM];
-static uint8_t pressed_end;
+static uint8_t pressed_end = 0;
 
-struct task_timing {
+struct TaskTiming {
   uint16_t const EXCLUSIVE_TIME;
   uint16_t last_time;
 };
-static struct task_timing draw_task = {
+static struct TaskTiming draw_task = {
   .EXCLUSIVE_TIME = DRAW_EXCLUSIVE_TIME,
 };
-static struct task_timing refresh_task = {
+static struct TaskTiming refresh_task = {
   .EXCLUSIVE_TIME = REFRESH_EXCLUSIVE_TIME,
 };
 
-static bool task_timing_check( struct task_timing* );
+static bool task_timing_check( struct TaskTiming* );
 
 static void update_color_random(void);
 
@@ -79,11 +88,25 @@ static void post_keypos_to_queueing(const keypos_t key_pos);
 
 static void matled_draw(void);
 static void matled_clear(void);
+static void matled_toggle(void);
+static void matled_mode_forward(void);
+static void matled_event_pressed(keyrecord_t *record);
 
+#ifdef ENABLE_SWITCH_PATTERN
 static void matled_refresh_SWITCH(void);
+#endif
+#ifdef ENABLE_DIMLY_PATTERN
 static void matled_refresh_DIMLY(void);
+#endif
+#ifdef ENABLE_RIPPLE_PATTERN
 static void matled_refresh_RIPPLE(void);
+#endif
+#ifdef ENABLE_CROSS_PATTERN
 static void matled_refresh_CROSS(void);
+#endif
+#ifdef ENABLE_WAVE_PATTERN
+static void matled_refresh_WAVE(void);
+#endif
 
 static int get_ledidx_from_keypos( keypos_t keypos );
 
@@ -91,15 +114,28 @@ static const struct {
   void (*update_color)(void);
   void (*post_keypos)(keypos_t key_pos);
   void (*matled_refresh)(void);
-} function_table[LM_NUM] = {
-  [LM_SWITCH]     = { NULL,                post_keypos_to_matled,   matled_refresh_SWITCH },
-  [LM_SWITCH_RB]  = { update_color_random, post_keypos_to_matled,   matled_refresh_SWITCH },
-  [LM_DIMLY]      = { NULL,                post_keypos_to_matled,   matled_refresh_DIMLY },
-  [LM_DIMLY_RB]   = { update_color_random, post_keypos_to_matled,   matled_refresh_DIMLY },
-  [LM_RIPPLE]     = { NULL,                post_keypos_to_queueing, matled_refresh_RIPPLE },
-  [LM_RIPPLE_RB]  = { update_color_random, post_keypos_to_queueing, matled_refresh_RIPPLE },
-  [LM_CROSS]      = { NULL,                post_keypos_to_queueing, matled_refresh_CROSS },
-  [LM_CROSS_RB]   = { update_color_random, post_keypos_to_queueing, matled_refresh_CROSS },
+} function_table[LP_NUM] = {
+  [LP_STATIC]        = { 0 },
+  #ifdef ENABLE_SWITCH_PATTERN
+    [LP_SWITCH]     = { NULL,                post_keypos_to_matled,   matled_refresh_SWITCH },
+    [LP_SWITCH_RB]  = { update_color_random, post_keypos_to_matled,   matled_refresh_SWITCH },
+  #endif
+  #ifdef ENABLE_DIMLY_PATTERN
+    [LP_DIMLY]      = { NULL,                post_keypos_to_matled,   matled_refresh_DIMLY },
+    [LP_DIMLY_RB]   = { update_color_random, post_keypos_to_matled,   matled_refresh_DIMLY },
+  #endif
+  #ifdef ENABLE_RIPPLE_PATTERN
+    [LP_RIPPLE]     = { NULL,                post_keypos_to_queueing, matled_refresh_RIPPLE },
+    [LP_RIPPLE_RB]  = { update_color_random, post_keypos_to_queueing, matled_refresh_RIPPLE },
+  #endif
+  #ifdef ENABLE_CROSS_PATTERN
+    [LP_CROSS]      = { NULL,                post_keypos_to_queueing, matled_refresh_CROSS },
+    [LP_CROSS_RB]   = { update_color_random, post_keypos_to_queueing, matled_refresh_CROSS },
+  #endif
+  #ifdef ENABLE_WAVE_PATTERN
+    [LP_WAVE]       = { NULL,                NULL,                    matled_refresh_WAVE },
+    [LP_WAVE_RB]    = { NULL,                NULL,                    matled_refresh_WAVE },
+  #endif
 };
 
 void matled_init(void)
@@ -115,42 +151,52 @@ int matled_get_mode(void)
   return matled_status.mode;
 }
 
-bool matled_get_enable(void)
+void matled_refresh_task(void)
 {
-  return rgblight_config.enable;
-}
-
-int matled_get_hue(void)
-{
-  return rgblight_config.hue;
-}
-
-int matled_get_sat(void)
-{
-  return rgblight_config.sat;
-}
-
-int matled_get_val(void)
-{
-  return rgblight_config.val;
-}
-
-void matled_mode_forward(void)
-{
-  matled_status.mode = (matled_status.mode + 1) % LM_NUM;
-  if ( matled_status.mode == 0 ) {
-    matled_status.mode++;
+  if ( !task_timing_check(&refresh_task) ) {
+    return;
   }
-  rgblight_config.mode = matled_status.mode;
-  eeconfig_update_rgblight(rgblight_config.raw);
 
-  matled_clear();
+  uint8_t led_mode = matled_status.mode;
+  if (led_mode >= LP_NUM) {
+    // nothing mode
+  }
+  else {
+    if ( function_table[led_mode].matled_refresh != NULL ) {
+      function_table[led_mode].matled_refresh();
+    }
+  }
+
+  matled_draw();
 }
 
-void matled_toggle(void)
+#define PROCESS_OVERRIDE_BEHAVIOR   (false)
+#define PROCESS_USUAL_BEHAVIOR      (true)
+
+bool matled_record_event(uint16_t keycode, keyrecord_t *record)
+{
+  switch (keycode) {
+    case RGB_TOG: if (record->event.pressed) {
+      matled_toggle();
+      return PROCESS_OVERRIDE_BEHAVIOR;
+    } break;
+
+    case RGB_MOD: if (record->event.pressed) {
+      matled_mode_forward();
+      return PROCESS_OVERRIDE_BEHAVIOR;
+    } break;
+  }
+
+  if (record->event.pressed) {
+    matled_event_pressed(record);
+  }
+
+  return PROCESS_USUAL_BEHAVIOR;
+}
+
+static void matled_toggle(void)
 {
   if (rgblight_config.enable) {
-    matled_status.hue_rnd = 0u;
     rgblight_disable();
   }
   else {
@@ -160,20 +206,23 @@ void matled_toggle(void)
   matled_clear();
 }
 
-void matled_default_config(void)
+static void matled_mode_forward(void)
 {
-  eeconfig_update_rgblight_default();
-  matled_init();
+  matled_status.mode = (matled_status.mode + 1) % LP_NUM;
+  rgblight_config.mode = matled_status.mode;
+  eeconfig_update_rgblight(rgblight_config.raw);
+
+  matled_clear();
 }
 
-void matled_event_pressed(keyrecord_t *record)
+static void matled_event_pressed(keyrecord_t *record)
 {
-  if ( !rgblight_config.enable ) {
+  if ( (!rgblight_config.enable) || (matled_status.mode == LP_STATIC) ) {
     return;
   }
 
   uint8_t led_mode = matled_status.mode;
-  if ( led_mode >= LM_NUM ) {
+  if ( led_mode >= LP_NUM ) {
     // nothing mode
   }
   else {
@@ -188,11 +237,13 @@ void matled_event_pressed(keyrecord_t *record)
   matled_draw();
 }
 
+__attribute__ ((unused))
 static void update_color_random(void)
 {
   matled_status.hue_rnd += rand();
 }
 
+__attribute__ ((unused))
 static void post_keypos_to_matled(keypos_t keypos)
 {
   int led_idx = get_ledidx_from_keypos(keypos);
@@ -208,6 +259,7 @@ static void post_keypos_to_matled(keypos_t keypos)
   }
 }
 
+__attribute__ ((unused))
 static void post_keypos_to_queueing(keypos_t keypos)
 {
     post_keypos_to_matled(keypos);
@@ -220,7 +272,7 @@ static void post_keypos_to_queueing(keypos_t keypos)
     pressed_end = (pressed_end + 1) % PRESSED_LIST_NUM;
 }
 
-static bool task_timing_check( struct task_timing *task )
+static bool task_timing_check( struct TaskTiming *task )
 {
   uint16_t current_time = timer_read();
   uint16_t diff_time = TIMER_DIFF_16(current_time, task->last_time);
@@ -235,7 +287,7 @@ static bool task_timing_check( struct task_timing *task )
 
 static void matled_draw(void)
 {
-  if ( !task_timing_check(&draw_task) ) {
+  if ( (matled_status.mode == LP_STATIC) || !task_timing_check(&draw_task) ) {
     return;
   }
 
@@ -250,40 +302,20 @@ static void matled_draw(void)
 
 static void matled_clear(void)
 {
-  matled_status.hue_rnd = 0u;
   for ( int idx = 0; idx < PRESSED_LIST_NUM; idx++ ) {
     pressed_list[idx].count = 0u;
   }
-  for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led_hv[idx].val = 0u;
-    rgblight_led[idx].r = 0u;
-    rgblight_led[idx].g = 0u;
-    rgblight_led[idx].b = 0u;
-  }
 
-  if ( !task_timing_check(&draw_task) ) {
-    return;
-  }
-  rgblight_set();
-}
-
-void matled_refresh(void)
-{
-  if ( !task_timing_check(&refresh_task) ) {
-    return;
-  }
-
-  uint8_t led_mode = matled_status.mode;
-  if (led_mode >= LM_NUM) {
-    // nothing mode
+  if (matled_status.mode == LP_STATIC) {
+    rgblight_sethsv(rgblight_config.hue, rgblight_config.sat, rgblight_config.val);
   }
   else {
-    if ( function_table[led_mode].matled_refresh != NULL ) {
-      function_table[led_mode].matled_refresh();
+    matled_status.hue_rnd = 0u;
+    for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
+      matled_status.led_hv[idx].val = 0u;
     }
+    matled_draw();
   }
-
-  matled_draw();
 }
 
 #define FOREACH_MATRIX(row, col, LIMIT_ROW, LIMIT_COL)  \
@@ -292,6 +324,7 @@ void matled_refresh(void)
   for ( int row = row##_begin; row < row##_end; row++ ) \
   for ( int col = 0; col < LIMIT_COL; col++ )
 
+#ifdef ENABLE_SWITCH_PATTERN
 static void matled_refresh_SWITCH(void)
 {
   FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
@@ -302,7 +335,9 @@ static void matled_refresh_SWITCH(void)
     }
   }
 }
+#endif
 
+#ifdef ENABLE_DIMLY_PATTERN
 static void matled_refresh_DIMLY(void)
 {
   int led_decay_val = rgblight_config.val * (1.f * REFRESH_EXCLUSIVE_TIME / DECAY_TIME);
@@ -314,7 +349,9 @@ static void matled_refresh_DIMLY(void)
     }
   }
 }
+#endif
 
+#ifdef ENABLE_RIPPLE_PATTERN
 static void matled_refresh_RIPPLE(void)
 {
   uint16_t const DECAY_COUNT  = 1.f * DECAY_TIME / REFRESH_EXCLUSIVE_TIME;
@@ -328,7 +365,7 @@ static void matled_refresh_RIPPLE(void)
   int const END_IDX = pressed_end;
   int idx = (END_IDX + 1) % PRESSED_LIST_NUM;
   for ( ; idx != END_IDX; idx = (idx + 1) % PRESSED_LIST_NUM ) {
-    struct as_pressed* it_source_pos = &pressed_list[idx];
+    struct PressedRecord* it_source_pos = &pressed_list[idx];
     if ( it_source_pos->count > 0u ) {
       it_source_pos->count++;
       int top_dist = HELIX_COLS * (1.f * it_source_pos->count / DECAY_COUNT);
@@ -354,7 +391,9 @@ static void matled_refresh_RIPPLE(void)
     }
   }
 }
+#endif
 
+#ifdef ENABLE_CROSS_PATTERN
 static void matled_refresh_CROSS(void)
 {
   uint16_t const DECAY_COUNT  = 1.f * DECAY_TIME / REFRESH_EXCLUSIVE_TIME;
@@ -368,7 +407,7 @@ static void matled_refresh_CROSS(void)
   int const END_IDX = pressed_end;
   int idx = (END_IDX + 1) % PRESSED_LIST_NUM;
   for ( ; idx != END_IDX; idx = (idx + 1) % PRESSED_LIST_NUM ) {
-    struct as_pressed* it_source_pos = &pressed_list[idx];
+    struct PressedRecord* it_source_pos = &pressed_list[idx];
     if ( it_source_pos->count > 0u ) {
       it_source_pos->count++;
       int top_dist = HELIX_COLS * (1.f * it_source_pos->count / DECAY_COUNT);
@@ -396,8 +435,48 @@ static void matled_refresh_CROSS(void)
       }
     }
   }
+}
+#endif
+
+#ifdef ENABLE_WAVE_PATTERN
+static void matled_refresh_WAVE(void)
+{
+  static uint8_t count = 0;
+
+  if (matled_status.mode == LP_WAVE) {
+    const uint8_t count_step = 256 * (REFRESH_EXCLUSIVE_TIME / 2000.f);
+    const uint8_t val_step_by_cell = RGBLIGHT_LIMIT_VAL / 3;
+    const int val_offset = rgblight_config.val - RGBLIGHT_LIMIT_VAL;
+
+    FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
+      int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
+      if (led_idx < 0) {
+        continue;
+      }
+
+      int val = (uint8_t)((row + col) * val_step_by_cell + count ) + val_offset;
+      matled_status.led_hv[led_idx].hue_bin = HUE_DEG2BIN(rgblight_config.hue);
+      matled_status.led_hv[led_idx].val     = MAX(0, val);
+    }
+    count -= count_step;
+  }
+  else {
+    const uint8_t count_step = 256 * (REFRESH_EXCLUSIVE_TIME / 1000.f);
+    const uint8_t hue_step_by_col = 128 / HELIX_COLS;
+
+    FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
+      int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
+      if (led_idx < 0) {
+        continue;
+      }
+      matled_status.led_hv[led_idx].hue_bin = (row + col) * hue_step_by_col + count;
+      matled_status.led_hv[led_idx].val     = rgblight_config.val;
+    }
+    count -= count_step;
+  }
 
 }
+#endif
 
 static int get_ledidx_from_keypos( keypos_t keypos )
 {

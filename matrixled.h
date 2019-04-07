@@ -1,29 +1,24 @@
 #ifndef MATRIXLED_H
 #define MATRIXLED_H
 
+#if !defined(RGBLIGHT_ENABLE)
+# error please enable RGBLIGHT_ENABLE, check ./rules.mk: LED_BACK_ENABLE = yes
+#endif
+#if defined(RGBLIGHT_ANIMATIONS)
+# error please disable RGBLIGHT_ANIMATIONS, check ./rules.mk: LED_ANIMATIONS = no
+#endif
+
 #include "action.h"
 
-#ifdef RGBLIGHT_ENABLE
-  void matled_init(void);
-  void matled_eeconfig_update(void);
-  int matled_get_mode(void);
-  bool matled_get_enable(void);
-  int matled_get_hue(void);
-  int matled_get_sat(void);
-  int matled_get_val(void);
-  void matled_mode_forward(void);
-  void matled_toggle(void);
-  void matled_default_config(void);
-  void matled_refresh(void);
-  void matled_event_pressed(keyrecord_t *record);
-#else
-# define matled_init()
-# define matled_eeconfig_update()
-# define matled_get_mode()
-# define matled_mode_forward()
-# define matled_toggle()
-# define matled_refresh()
-# define matled_event_pressed(a)
-#endif
+#define ENABLE_SWITCH_PATTERN
+//#define ENABLE_DIMLY_PATTERN
+#define ENABLE_RIPPLE_PATTERN
+#define ENABLE_CROSS_PATTERN
+#define ENABLE_WAVE_PATTERN
 
-#endif
+void matled_init(void);
+int matled_get_mode(void);
+void matled_refresh_task(void);
+bool matled_record_event(uint16_t keycode, keyrecord_t *record);
+
+#endif // MATRIXLED
