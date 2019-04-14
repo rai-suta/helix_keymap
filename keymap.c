@@ -10,11 +10,11 @@
   #include "ssd1306.h"
 #endif
 
-#include "matrixled.h"
 
 #ifdef RGBLIGHT_ENABLE
-// Following line allows macro to read current RGB settings
-extern rgblight_config_t rgblight_config;
+  #include "matrixled.h"
+  // Following line allows macro to read current RGB settings
+  extern rgblight_config_t rgblight_config;
 #endif
 
 // Keymap layer names
@@ -174,7 +174,7 @@ process_record_user(uint16_t keycode, keyrecord_t *record)
     return PROCESS_OVERRIDE_BEHAVIOR;
   }
 
-  #if defined(MATRIXLED_H)
+  #ifdef MATRIXLED_H
     // notice keypos to matled
     result_process = matled_record_event(keycode, record);
     if (result_process == PROCESS_OVERRIDE_BEHAVIOR) {
@@ -191,13 +191,13 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
   switch (keycode) {
 
     case RGBRST: if (record->event.pressed) {
-    #if defined(RGBLIGHT_ENABLE)
-      eeconfig_update_rgblight_default();
-      rgblight_enable();
-    #endif
-    #if defined(MATRIXLED_H)
-      matled_init();
-    #endif
+      #ifdef RGBLIGHT_ENABLE
+        eeconfig_update_rgblight_default();
+        rgblight_enable();
+      #endif
+      #ifdef MATRIXLED_H
+        matled_init();
+      #endif
     } break;
 
     case MO_CONF: {
@@ -223,7 +223,7 @@ process_record_event(uint16_t keycode, keyrecord_t *record)
 
 //keyboard start-up code. Runs once when the firmware starts up.
 void matrix_init_user(void) {
-  #if defined(MATRIXLED_H)
+  #ifdef MATRIXLED_H
     matled_init();
   #endif
   //SSD1306 OLED init, make sure to add #define SSD1306OLED in config.h
@@ -232,14 +232,59 @@ void matrix_init_user(void) {
   #endif
 }
 
+//#define MATRIX_SCAN_RUN_TIME
+#ifdef MATRIX_SCAN_RUN_TIME
+static struct {
+  uint32_t last_calc_time;
+  uint32_t scan_num;
+  uint32_t progress_sum;
+  uint32_t progress_max;
+  uint32_t cycle_time;
+  uint32_t mean;
+  uint32_t max;
+} matrix_scan_run_time;
+static inline void matrix_scan_run_time_end(uint32_t begin_time);
+#endif
+
 void matrix_scan_user(void) {
-  #if defined(MATRIXLED_H)
+  __attribute__ ((unused))
+  uint32_t begin_time = timer_read32();
+
+  #ifdef MATRIXLED_H
     matled_refresh_task();
   #endif
+
+  #ifdef MATRIX_SCAN_RUN_TIME
+    matrix_scan_run_time_end(begin_time);
+  #endif
+
   #ifdef SSD1306OLED
     iota_gfx_task();  // this is what updates the display continuously
   #endif
 }
+
+#ifdef MATRIX_SCAN_RUN_TIME
+static inline void matrix_scan_run_time_end(uint32_t begin_time)
+{
+  uint32_t end_time = timer_read32();
+  uint32_t run_time = TIMER_DIFF_32(end_time, begin_time);
+
+  matrix_scan_run_time.scan_num++;
+  matrix_scan_run_time.progress_sum += run_time;
+  matrix_scan_run_time.progress_max = (matrix_scan_run_time.progress_max > run_time) ? matrix_scan_run_time.progress_max : run_time;
+
+  if (TIMER_DIFF_32(begin_time, matrix_scan_run_time.last_calc_time) > 1000) {
+    matrix_scan_run_time.cycle_time = TIMER_DIFF_32(begin_time, matrix_scan_run_time.last_calc_time) / matrix_scan_run_time.scan_num;
+    matrix_scan_run_time.mean = matrix_scan_run_time.progress_sum / matrix_scan_run_time.scan_num;
+    matrix_scan_run_time.max  = matrix_scan_run_time.progress_max;
+
+    matrix_scan_run_time.last_calc_time = begin_time;
+    matrix_scan_run_time.scan_num = 0u;
+    matrix_scan_run_time.progress_sum = 0u;
+    matrix_scan_run_time.progress_max = 0u;
+  }
+}
+#endif
 
 // OLED image characters
 static const char PROGMEM
@@ -278,8 +323,14 @@ static void
 render_status_Layer(struct CharacterMatrix *matrix);
 static void
 render_status_UserMod(struct CharacterMatrix *matrix);
+#ifdef RGBLIGHT_ENABLE
 static void
 render_status_LedParams(struct CharacterMatrix *matrix);
+#endif
+#ifdef MATRIX_SCAN_RUN_TIME
+  static void
+  render_status_RunTime(struct CharacterMatrix *matrix);
+#endif
 
 static void
 matrix_update(struct CharacterMatrix *dest,
@@ -302,13 +353,20 @@ render_status(struct CharacterMatrix *matrix)
 {
   render_status_Layer(matrix);
 
-  matrix_write_P(matrix, PSTR("\n"));
+  matrix_write_P(matrix, "\n");
   render_status_UserMod(matrix);
+
+  #ifdef MATRIX_SCAN_RUN_TIME
+    matrix_write_P(matrix, "\n");
+    render_status_RunTime(matrix);
+  #endif
 
   uint32_t layer = layer_state | default_layer_state;
   if ( layer & (1<<KL_(CONFIG)) ) {
-    matrix_write_P(matrix, PSTR("\n"));
-    render_status_LedParams(matrix);
+    #ifdef RGBLIGHT_ENABLE
+      matrix_write_P(matrix, "\n");
+      render_status_LedParams(matrix);
+    #endif
   }
 }
 
@@ -324,13 +382,13 @@ render_status_Layer(struct CharacterMatrix *matrix)
 
   matrix_write_P(matrix, PSTR("Layer:"));
   if ( layer == 0u ) {
-      matrix_write_P(matrix, PSTR(" "));
+      matrix_write_P(matrix, " ");
       matrix_write_P(matrix, layerNameStr_P(0));
   }
   else {
     for ( int layer_idx = 0; layer_idx < KL_NUM; layer_idx++ ) {
       if ( layer & (1<<layer_idx) ) {
-        matrix_write_P(matrix, PSTR(" "));
+        matrix_write_P(matrix, " ");
         matrix_write_P(matrix, layerNameStr_P(layer_idx));
       }
     }
@@ -343,12 +401,14 @@ render_status_UserMod(struct CharacterMatrix *matrix)
   matrix_write_P(matrix, PSTR("UserMod:"));
   for ( int mod_idx = 0; mod_idx < UM_NUM; mod_idx++ ) {
     if ( user_modifier_bits & (1<<mod_idx) ) {
-      matrix_write_P(matrix, PSTR(" "));
+      matrix_write_P(matrix, " ");
       matrix_write_P(matrix, userModNameStr_P(mod_idx));
     }
   }
 }
 
+
+#ifdef RGBLIGHT_ENABLE
 static void
 render_status_LedParams(struct CharacterMatrix *matrix)
 {
@@ -357,30 +417,50 @@ render_status_LedParams(struct CharacterMatrix *matrix)
 
   matrix_write_P(matrix, PSTR("LedStt"));
 
-  #if defined(RGBLIGHT_ENABLE)
-  # if defined(MATRIXLED_H)
+  #ifdef MATRIXLED_H
     int led_mode = matled_get_mode();
-  # else
+  #else
     int led_mode = rgblight_config.mode;
-  # endif
-    if ( snprintf(buf, sizeof_buf, ":%c%d", (rgblight_config.enable ? ' ' : '!')
-                                          , led_mode) > 0 ) {
-      matrix_write(matrix, buf);
-    }
-
-    if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.hue) > 0 ) {
-      matrix_write(matrix, buf);
-    }
-
-    if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.sat) > 0 ) {
-      matrix_write(matrix, buf);
-    }
-
-    if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.val) > 0 ) {
-      matrix_write(matrix, buf);
-    }
   #endif
+  if ( snprintf(buf, sizeof_buf, ":%c%d", (rgblight_config.enable ? ' ' : '!')
+                                        , led_mode) > 0 ) {
+    matrix_write(matrix, buf);
+  }
+
+  if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.hue) > 0 ) {
+    matrix_write(matrix, buf);
+  }
+
+  if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.sat) > 0 ) {
+    matrix_write(matrix, buf);
+  }
+
+  if ( snprintf(buf, sizeof_buf, ":%d", rgblight_config.val) > 0 ) {
+    matrix_write(matrix, buf);
+  }
 }
+#endif
+
+#ifdef MATRIX_SCAN_RUN_TIME
+static void
+render_status_RunTime(struct CharacterMatrix *matrix)
+{
+  char buf[16];
+  const size_t sizeof_buf = sizeof(buf);
+
+  matrix_write_P(matrix, PSTR("RunTime:"));
+
+  if (snprintf(buf, sizeof_buf, "%ld,", matrix_scan_run_time.cycle_time) > 0) {
+    matrix_write(matrix, buf);
+  }
+  if (snprintf(buf, sizeof_buf, "%ld,", matrix_scan_run_time.mean) > 0) {
+    matrix_write(matrix, buf);
+  }
+  if (snprintf(buf, sizeof_buf, "%ld,", matrix_scan_run_time.max) > 0) {
+    matrix_write(matrix, buf);
+  }
+}
+#endif
 
 static void
 matrix_update(struct CharacterMatrix *dest,

@@ -5,16 +5,17 @@
 #include "matrixled.h"
 
 // configure
-#define DRAW_EXCLUSIVE_TIME     10  /* ms */
-#define REFRESH_EXCLUSIVE_TIME  20  /* ms */
-#define DECAY_TIME              500 /* ms */
-#define TRACING_LEN             5   /* cell */
+#define DECAY_TIME              200 // ms
+#define MATLED_TASK_TIME        10  // ms
+#define TRACING_LEN             5   // cell
 
 #define MIN(a,b)            (((a) < (b)) ? (a) : (b))
 #define MAX(a,b)            (((a) > (b)) ? (a) : (b))
 #define SQUARE(x)           ((x) * (x))
-#define HUE_BIN2DEG(x)      ((x) * (360.f/256.f))
-#define HUE_DEG2BIN(x)      ((x) * (256.f/360.f))
+#define HUE_BIN_MAX         255
+#define HUE_BIN_QN          256
+#define HUE_BIN2DEG(x)      ((x) * (360.f/HUE_BIN_QN))
+#define HUE_DEG2BIN(x)      ((x) * (HUE_BIN_QN/360.f))
 
 // External parameter from matrix.c
 extern uint8_t is_master;
@@ -28,23 +29,23 @@ static LED_TYPE (* const rgblight_led_ptr)[RGBLED_NUM] = &led;
 // Lighting pattern name
 enum LightingPattern {
   LP_STATIC = 0,
-  #ifdef ENABLE_SWITCH_PATTERN
+  #ifdef ENABLE_MATLED_SWITCH_PATTERN
     LP_SWITCH,
     LP_SWITCH_RB,
   #endif
-  #ifdef ENABLE_DIMLY_PATTERN
+  #ifdef ENABLE_MATLED_DIMLY_PATTERN
     LP_DIMLY,
     LP_DIMLY_RB,
   #endif
-  #ifdef ENABLE_RIPPLE_PATTERN
+  #ifdef ENABLE_MATLED_RIPPLE_PATTERN
     LP_RIPPLE,
     LP_RIPPLE_RB,
   #endif
-  #ifdef ENABLE_CROSS_PATTERN
+  #ifdef ENABLE_MATLED_CROSS_PATTERN
     LP_CROSS,
     LP_CROSS_RB,
   #endif
-  #ifdef ENABLE_WAVE_PATTERN
+  #ifdef ENABLE_MATLED_WAVE_PATTERN
     LP_WAVE,
     LP_WAVE_RB,
   #endif
@@ -58,13 +59,14 @@ struct {
   } led_hv[RGBLED_NUM];
   uint8_t hue_rnd;
   enum LightingPattern mode;
+  bool is_refreshed;
 } matled_status;
 
 #define PRESSED_LIST_NUM      (8)
 static struct PressedRecord {
   keypos_t key;
   uint8_t hue_bin;
-  uint16_t count;
+  int count;
 } pressed_list[PRESSED_LIST_NUM];
 static uint8_t pressed_end = 0;
 
@@ -73,10 +75,10 @@ struct TaskTiming {
   uint16_t last_time;
 };
 static struct TaskTiming draw_task = {
-  .EXCLUSIVE_TIME = DRAW_EXCLUSIVE_TIME,
+  .EXCLUSIVE_TIME = MATLED_TASK_TIME,
 };
 static struct TaskTiming refresh_task = {
-  .EXCLUSIVE_TIME = REFRESH_EXCLUSIVE_TIME,
+  .EXCLUSIVE_TIME = MATLED_TASK_TIME,
 };
 
 static bool task_timing_check( struct TaskTiming* );
@@ -92,23 +94,26 @@ static void matled_toggle(void);
 static void matled_mode_forward(void);
 static void matled_event_pressed(keyrecord_t *record);
 
-#ifdef ENABLE_SWITCH_PATTERN
+#ifdef ENABLE_MATLED_SWITCH_PATTERN
 static void matled_refresh_SWITCH(void);
 #endif
-#ifdef ENABLE_DIMLY_PATTERN
+#ifdef ENABLE_MATLED_DIMLY_PATTERN
 static void matled_refresh_DIMLY(void);
 #endif
-#ifdef ENABLE_RIPPLE_PATTERN
+#ifdef ENABLE_MATLED_RIPPLE_PATTERN
 static void matled_refresh_RIPPLE(void);
 #endif
-#ifdef ENABLE_CROSS_PATTERN
+#ifdef ENABLE_MATLED_CROSS_PATTERN
 static void matled_refresh_CROSS(void);
 #endif
-#ifdef ENABLE_WAVE_PATTERN
+#ifdef ENABLE_MATLED_WAVE_PATTERN
 static void matled_refresh_WAVE(void);
+static void matled_refresh_WAVE_RB(void);
 #endif
 
 static int get_ledidx_from_keypos( keypos_t keypos );
+static int distance(int x, int y);
+static int distance_from_line(int x, int y, int m, int n);
 
 static const struct {
   void (*update_color)(void);
@@ -116,25 +121,25 @@ static const struct {
   void (*matled_refresh)(void);
 } function_table[LP_NUM] = {
   [LP_STATIC]        = { 0 },
-  #ifdef ENABLE_SWITCH_PATTERN
+  #ifdef ENABLE_MATLED_SWITCH_PATTERN
     [LP_SWITCH]     = { NULL,                post_keypos_to_matled,   matled_refresh_SWITCH },
     [LP_SWITCH_RB]  = { update_color_random, post_keypos_to_matled,   matled_refresh_SWITCH },
   #endif
-  #ifdef ENABLE_DIMLY_PATTERN
+  #ifdef ENABLE_MATLED_DIMLY_PATTERN
     [LP_DIMLY]      = { NULL,                post_keypos_to_matled,   matled_refresh_DIMLY },
     [LP_DIMLY_RB]   = { update_color_random, post_keypos_to_matled,   matled_refresh_DIMLY },
   #endif
-  #ifdef ENABLE_RIPPLE_PATTERN
+  #ifdef ENABLE_MATLED_RIPPLE_PATTERN
     [LP_RIPPLE]     = { NULL,                post_keypos_to_queueing, matled_refresh_RIPPLE },
     [LP_RIPPLE_RB]  = { update_color_random, post_keypos_to_queueing, matled_refresh_RIPPLE },
   #endif
-  #ifdef ENABLE_CROSS_PATTERN
+  #ifdef ENABLE_MATLED_CROSS_PATTERN
     [LP_CROSS]      = { NULL,                post_keypos_to_queueing, matled_refresh_CROSS },
     [LP_CROSS_RB]   = { update_color_random, post_keypos_to_queueing, matled_refresh_CROSS },
   #endif
-  #ifdef ENABLE_WAVE_PATTERN
+  #ifdef ENABLE_MATLED_WAVE_PATTERN
     [LP_WAVE]       = { NULL,                NULL,                    matled_refresh_WAVE },
-    [LP_WAVE_RB]    = { NULL,                NULL,                    matled_refresh_WAVE },
+    [LP_WAVE_RB]    = { NULL,                NULL,                    matled_refresh_WAVE_RB },
   #endif
 };
 
@@ -194,6 +199,7 @@ bool matled_record_event(uint16_t keycode, keyrecord_t *record)
   return PROCESS_USUAL_BEHAVIOR;
 }
 
+__attribute__ ((unused))
 static void matled_toggle(void)
 {
   if (rgblight_config.enable) {
@@ -206,6 +212,7 @@ static void matled_toggle(void)
   matled_clear();
 }
 
+__attribute__ ((unused))
 static void matled_mode_forward(void)
 {
   matled_status.mode = (matled_status.mode + 1) % LP_NUM;
@@ -215,6 +222,7 @@ static void matled_mode_forward(void)
   matled_clear();
 }
 
+__attribute__ ((unused))
 static void matled_event_pressed(keyrecord_t *record)
 {
   if ( (!rgblight_config.enable) || (matled_status.mode == LP_STATIC) ) {
@@ -256,6 +264,7 @@ static void post_keypos_to_matled(keypos_t keypos)
 
     matled_status.led_hv[led_idx].hue_bin = hue_bin;
     matled_status.led_hv[led_idx].val = led_val;
+    matled_status.is_refreshed = true;
   }
 }
 
@@ -272,6 +281,7 @@ static void post_keypos_to_queueing(keypos_t keypos)
     pressed_end = (pressed_end + 1) % PRESSED_LIST_NUM;
 }
 
+__attribute__ ((unused))
 static bool task_timing_check( struct TaskTiming *task )
 {
   uint16_t current_time = timer_read();
@@ -279,14 +289,17 @@ static bool task_timing_check( struct TaskTiming *task )
   if ( diff_time < task->EXCLUSIVE_TIME ){
     return false;
   }
-  task->last_time = ( diff_time > (2 * task->EXCLUSIVE_TIME) )
-                      ? current_time
-                      : task->last_time + task->EXCLUSIVE_TIME;
+
+  task->last_time = current_time;
   return true;
 }
 
+__attribute__ ((unused))
 static void matled_draw(void)
 {
+  if (!matled_status.is_refreshed) {
+    return;
+  }
   if ( (matled_status.mode == LP_STATIC) || !task_timing_check(&draw_task) ) {
     return;
   }
@@ -297,9 +310,12 @@ static void matled_draw(void)
     uint8_t led_val  = matled_status.led_hv[idx].val;
     sethsv(led_hue, led_sat, led_val, &rgblight_led[idx]);
   }
+  matled_status.is_refreshed = false;
+
   rgblight_set();
 }
 
+__attribute__ ((unused))
 static void matled_clear(void)
 {
   for ( int idx = 0; idx < PRESSED_LIST_NUM; idx++ ) {
@@ -314,6 +330,7 @@ static void matled_clear(void)
     for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
       matled_status.led_hv[idx].val = 0u;
     }
+    matled_status.is_refreshed = true;
     matled_draw();
   }
 }
@@ -324,7 +341,7 @@ static void matled_clear(void)
   for ( int row = row##_begin; row < row##_end; row++ ) \
   for ( int col = 0; col < LIMIT_COL; col++ )
 
-#ifdef ENABLE_SWITCH_PATTERN
+#ifdef ENABLE_MATLED_SWITCH_PATTERN
 static void matled_refresh_SWITCH(void)
 {
   FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
@@ -332,151 +349,183 @@ static void matled_refresh_SWITCH(void)
     if ( led_idx >= 0 && !matrix_is_on( row, col ) ) {
       matled_status.led_hv[led_idx].hue_bin = 0u;
       matled_status.led_hv[led_idx].val = 0u;
+      matled_status.is_refreshed = true;
     }
   }
 }
-#endif
+#endif // ENABLE_MATLED_SWITCH_PATTERN
 
-#ifdef ENABLE_DIMLY_PATTERN
+#ifdef ENABLE_MATLED_DIMLY_PATTERN
 static void matled_refresh_DIMLY(void)
 {
-  int led_decay_val = rgblight_config.val * (1.f * REFRESH_EXCLUSIVE_TIME / DECAY_TIME);
+  int led_decay_val = rgblight_config.val * (1.f * MATLED_TASK_TIME / DECAY_TIME);
 
   FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
     int led_idx = get_ledidx_from_keypos( (keypos_t){.row = row, .col = col} );
     if ( led_idx >= 0 && !matrix_is_on( row, col ) ) {
       matled_status.led_hv[led_idx].val = MAX(0, matled_status.led_hv[led_idx].val - led_decay_val);
+      matled_status.is_refreshed = true;
     }
   }
 }
 #endif
 
-#ifdef ENABLE_RIPPLE_PATTERN
+#ifdef ENABLE_MATLED_RIPPLE_PATTERN
 static void matled_refresh_RIPPLE(void)
 {
-  uint16_t const DECAY_COUNT  = 1.f * DECAY_TIME / REFRESH_EXCLUSIVE_TIME;
-  float const LINER_SLOPE     = -(rgblight_config.val / TRACING_LEN);
-  float const LINER_INTERCEPT = rgblight_config.val;
+  static const int fct = RGBLIGHT_LIMIT_VAL / HELIX_COLS;
+  //static const int fct = HUE_BIN_QN / HELIX_COLS;
+  static const int count_step = fct * TRACING_LEN / (1.f * DECAY_TIME / MATLED_TASK_TIME);
+  static const int near_max = fct * (HELIX_ROWS + HELIX_COLS);
 
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
     matled_status.led_hv[idx].val = 0u;
   }
+  matled_status.is_refreshed = true;
 
-  int const END_IDX = pressed_end;
-  int idx = (END_IDX + 1) % PRESSED_LIST_NUM;
-  for ( ; idx != END_IDX; idx = (idx + 1) % PRESSED_LIST_NUM ) {
+  int const idx_end = pressed_end;
+  int idx = (idx_end + 1) % PRESSED_LIST_NUM;
+  for ( ; idx != idx_end; idx = (idx + 1) % PRESSED_LIST_NUM ) {
     struct PressedRecord* it_source_pos = &pressed_list[idx];
-    if ( it_source_pos->count > 0u ) {
-      it_source_pos->count++;
-      int top_dist = HELIX_COLS * (1.f * it_source_pos->count / DECAY_COUNT);
-      int end_dist = MAX(0, top_dist - TRACING_LEN);
-      bool redraw = false;
-      FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
-        int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
-        if (led_idx < 0) {
-          continue;
-        }
-        int square_dist = SQUARE(it_source_pos->key.row - row) + SQUARE(it_source_pos->key.col - col);
-        if ( (square_dist <= SQUARE(top_dist)) && (square_dist >= SQUARE(end_dist)) ) {
-          int dist = sqrt(square_dist);
-          int val  = LINER_SLOPE * (top_dist - dist) + LINER_INTERCEPT;
-          matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
-          matled_status.led_hv[led_idx].val     = MIN(matled_status.led_hv[led_idx].val + val, RGBLIGHT_LIMIT_VAL);
-          redraw = true;
-        }
-      }
-      if (!redraw) {
-        it_source_pos->count = 0u;
-      }
+    if ( it_source_pos->count <= 0u ) {
+      continue;
     }
+
+    int far = it_source_pos->count;
+    int near = MAX(0, far - (fct*TRACING_LEN));
+    if (near >= near_max) {
+      it_source_pos->count = 0u;
+      continue;
+    }
+
+    FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
+      int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
+      if (led_idx < 0) {
+        continue;
+      }
+
+      int x = fct * (it_source_pos->key.col - col);
+      int y = fct * (it_source_pos->key.row - row);
+      int d = distance(x, y);
+      if ((d < near) || (far < d)) {
+        continue;
+      }
+
+      int val = rgblight_config.val - (far - d);
+      matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
+      matled_status.led_hv[led_idx].val     = MIN(matled_status.led_hv[led_idx].val + val, RGBLIGHT_LIMIT_VAL);
+      //matled_status.led_hv[led_idx].hue_bin = val;
+      //matled_status.led_hv[led_idx].val     = RGBLIGHT_LIMIT_VAL;
+    }
+    matled_status.is_refreshed = true;
+    it_source_pos->count += count_step;
   }
 }
-#endif
+#endif // ENABLE_MATLED_RIPPLE_PATTERN
 
-#ifdef ENABLE_CROSS_PATTERN
+#ifdef ENABLE_MATLED_CROSS_PATTERN
 static void matled_refresh_CROSS(void)
 {
-  uint16_t const DECAY_COUNT  = 1.f * DECAY_TIME / REFRESH_EXCLUSIVE_TIME;
-  float const LINER_SLOPE     = -(rgblight_config.val / TRACING_LEN);
-  float const LINER_INTERCEPT = rgblight_config.val;
+  static const int fct = RGBLIGHT_LIMIT_VAL / HELIX_COLS;
+  static const int count_step = fct * TRACING_LEN / (1.f * DECAY_TIME / MATLED_TASK_TIME);
+  static const int near_max = fct * (HELIX_ROWS + HELIX_COLS);
 
   for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
     matled_status.led_hv[idx].val = 0u;
   }
+  matled_status.is_refreshed = true;
 
-  int const END_IDX = pressed_end;
-  int idx = (END_IDX + 1) % PRESSED_LIST_NUM;
-  for ( ; idx != END_IDX; idx = (idx + 1) % PRESSED_LIST_NUM ) {
+  int const idx_end = pressed_end;
+  int idx = (idx_end + 1) % PRESSED_LIST_NUM;
+  for ( ; idx != idx_end; idx = (idx + 1) % PRESSED_LIST_NUM ) {
     struct PressedRecord* it_source_pos = &pressed_list[idx];
-    if ( it_source_pos->count > 0u ) {
-      it_source_pos->count++;
-      int top_dist = HELIX_COLS * (1.f * it_source_pos->count / DECAY_COUNT);
-      int end_dist = MAX(0, top_dist - TRACING_LEN);
-      bool redraw = false;
-      FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
-        if ( (it_source_pos->key.row != row) && (it_source_pos->key.col != col) ) {
-          continue;
-        }
-        int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
-        if (led_idx < 0) {
-          continue;
-        }
-        int square_dist = SQUARE(it_source_pos->key.row - row) + SQUARE(it_source_pos->key.col - col);
-        if ( (square_dist <= SQUARE(top_dist)) && (square_dist >= SQUARE(end_dist)) ) {
-          int dist = sqrt(square_dist);
-          int val  = LINER_SLOPE * (top_dist - dist) + LINER_INTERCEPT;
-          matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
-          matled_status.led_hv[led_idx].val     = MIN(matled_status.led_hv[led_idx].val + val, RGBLIGHT_LIMIT_VAL);
-          redraw = true;
-        }
-      }
-      if (!redraw) {
-        it_source_pos->count = 0u;
-      }
+    if ( it_source_pos->count <= 0u ) {
+      continue;
     }
+
+    int far = it_source_pos->count;
+    int near = MAX(0, far - (fct*TRACING_LEN));
+    if (near >= near_max) {
+      it_source_pos->count = 0u;
+      continue;
+    }
+
+    FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
+      if ( (it_source_pos->key.row != row) && (it_source_pos->key.col != col) ) {
+        continue;
+      }
+
+      int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
+      if (led_idx < 0) {
+        continue;
+      }
+
+      int x = fct * (it_source_pos->key.col - col);
+      int y = fct * (it_source_pos->key.row - row);
+      int d = distance(x, y);
+      if ((d < near) || (far < d)) {
+        continue;
+      }
+
+      int val = rgblight_config.val - (far - d);
+      matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
+      matled_status.led_hv[led_idx].val     = MIN(matled_status.led_hv[led_idx].val + val, RGBLIGHT_LIMIT_VAL);
+    }
+    matled_status.is_refreshed = true;
+    it_source_pos->count += count_step;
   }
 }
-#endif
+#endif // ENABLE_MATLED_CROSS_PATTERN
 
-#ifdef ENABLE_WAVE_PATTERN
+#ifdef ENABLE_MATLED_WAVE_PATTERN
 static void matled_refresh_WAVE(void)
 {
-  static uint8_t count = 0;
+  static const int fct = RGBLIGHT_LIMIT_VAL / TRACING_LEN;
+  static const int slope = -1;
+  static const int ofst_step = 256 * (MATLED_TASK_TIME / 1000.f);
+  static uint16_t ofst;
 
-  if (matled_status.mode == LP_WAVE) {
-    const uint8_t count_step = 256 * (REFRESH_EXCLUSIVE_TIME / 2000.f);
-    const uint8_t val_step_by_cell = RGBLIGHT_LIMIT_VAL / 3;
-    const int val_offset = rgblight_config.val - RGBLIGHT_LIMIT_VAL;
+  ofst += ofst_step;
 
-    FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
-      int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
-      if (led_idx < 0) {
-        continue;
-      }
-
-      int val = (uint8_t)((row + col) * val_step_by_cell + count ) + val_offset;
-      matled_status.led_hv[led_idx].hue_bin = HUE_DEG2BIN(rgblight_config.hue);
-      matled_status.led_hv[led_idx].val     = MAX(0, val);
+  FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
+    int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
+    if (led_idx < 0) {
+      continue;
     }
-    count -= count_step;
-  }
-  else {
-    const uint8_t count_step = 256 * (REFRESH_EXCLUSIVE_TIME / 1000.f);
-    const uint8_t hue_step_by_col = 128 / HELIX_COLS;
 
-    FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
-      int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
-      if (led_idx < 0) {
-        continue;
-      }
-      matled_status.led_hv[led_idx].hue_bin = (row + col) * hue_step_by_col + count;
-      matled_status.led_hv[led_idx].val     = rgblight_config.val;
-    }
-    count -= count_step;
+    int x = fct * col;
+    int y = fct * row;
+    unsigned int d     = distance_from_line(x, y, slope, ofst);
+    unsigned int d_mod = d % RGBLIGHT_LIMIT_VAL;
+    int value = (d / RGBLIGHT_LIMIT_VAL) & 1
+                  ? d_mod
+                  : rgblight_config.val - d_mod;
+    matled_status.led_hv[led_idx].hue_bin = HUE_DEG2BIN(rgblight_config.hue);
+    matled_status.led_hv[led_idx].val     = MAX(0, value);
   }
-
+  matled_status.is_refreshed = true;
 }
-#endif
+
+static void matled_refresh_WAVE_RB(void)
+{
+  static uint16_t count;
+  static const uint16_t count_step = 256 * (MATLED_TASK_TIME / 1000.f);
+  static const uint8_t fct = 128 / HELIX_COLS;
+
+  FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
+    int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
+    if (led_idx < 0) {
+      continue;
+    }
+
+    matled_status.led_hv[led_idx].hue_bin = fct * (row + col) + count;
+    matled_status.led_hv[led_idx].val     = rgblight_config.val;
+  }
+  matled_status.is_refreshed = true;
+
+  count -= count_step;
+}
+#endif // ENABLE_MATLED_WAVE_PATTERN
 
 static int get_ledidx_from_keypos( keypos_t keypos )
 {
@@ -503,4 +552,36 @@ static int get_ledidx_from_keypos( keypos_t keypos )
     int idx_mod32 = idx & 31;
     return ( idx > 0 ) ? ( idx_mod32 ) : ( -1 );
   }
+}
+
+__attribute__ ((unused))
+static int distance(int x, int y)
+{
+#if 1
+  // [REF]Algorithms / Distance approximations - Octagonal, https://en.wikibooks.org/wiki/Algorithms/Distance_approximations
+  int absx = abs(x);
+  int absy = abs(y);
+  int max, min;
+  if (absx > absy) {
+    max = absx;
+    min = absy;
+  }
+  else {
+    max = absy;
+    min = absx;
+  }
+
+  return (964L * max + 420L * min) / 1024L;
+#else
+  return sqrt(x*x + y*y);
+#endif
+}
+
+__attribute__ ((unused))
+static int distance_from_line(int x, int y, int m, int n)
+{
+  int a = m, b = -1, c = n;
+  int tmp_a = abs(a*x + b*y + c);
+  int tmp_b = distance(a, b);
+  return tmp_a / tmp_b;
 }
