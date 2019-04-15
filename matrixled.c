@@ -5,7 +5,7 @@
 #include "matrixled.h"
 
 // configure
-#define DECAY_TIME              200 // ms
+#define DECAY_TIME              500 // ms
 #define MATLED_TASK_TIME        10  // ms
 #define TRACING_LEN             5   // cell
 
@@ -373,7 +373,9 @@ static void matled_refresh_DIMLY(void)
 #ifdef ENABLE_MATLED_RIPPLE_PATTERN
 static void matled_refresh_RIPPLE(void)
 {
-  static const int fct = RGBLIGHT_LIMIT_VAL / HELIX_COLS;
+  static const int frac = RGBLIGHT_LIMIT_VAL ;
+  static const int denom = TRACING_LEN;
+  static const int fct = frac / denom;
   //static const int fct = HUE_BIN_QN / HELIX_COLS;
   static const int count_step = fct * TRACING_LEN / (1.f * DECAY_TIME / MATLED_TASK_TIME);
   static const int near_max = fct * (HELIX_ROWS + HELIX_COLS);
@@ -397,6 +399,7 @@ static void matled_refresh_RIPPLE(void)
       it_source_pos->count = 0u;
       continue;
     }
+    int outline = far + fct*1;
 
     FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
       int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
@@ -407,8 +410,11 @@ static void matled_refresh_RIPPLE(void)
       int x = fct * (it_source_pos->key.col - col);
       int y = fct * (it_source_pos->key.row - row);
       int d = distance(x, y);
-      if ((d < near) || (far < d)) {
+      if ((d < near) || (outline < d)) {
         continue;
+      }
+      else if (d > far) {
+        d = (far - d) * denom + far;
       }
 
       int val = rgblight_config.val - (far - d);
