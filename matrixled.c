@@ -5,7 +5,7 @@
 #include "matrixled.h"
 
 // configure
-#define DECAY_TIME              500 // ms
+#define DECAY_TIME              200 // ms
 #define MATLED_TASK_TIME        10  // ms
 #define TRACING_LEN             5   // cell
 
@@ -90,6 +90,7 @@ static void post_keypos_to_queueing(const keypos_t key_pos);
 
 static void matled_draw(void);
 static void matled_clear(void);
+static void matled_clear_led_hv(void);
 static void matled_toggle(void);
 static void matled_mode_forward(void);
 static void matled_event_pressed(keyrecord_t *record);
@@ -327,11 +328,17 @@ static void matled_clear(void)
   }
   else {
     matled_status.hue_rnd = 0u;
-    for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-      matled_status.led_hv[idx].val = 0u;
-    }
+    matled_clear_led_hv();
     matled_status.is_refreshed = true;
     matled_draw();
+  }
+}
+
+__attribute__ ((unused))
+static void matled_clear_led_hv(void)
+{
+  for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
+    matled_status.led_hv[idx].val = 0u;
   }
 }
 
@@ -373,17 +380,11 @@ static void matled_refresh_DIMLY(void)
 #ifdef ENABLE_MATLED_RIPPLE_PATTERN
 static void matled_refresh_RIPPLE(void)
 {
-  static const int frac = RGBLIGHT_LIMIT_VAL ;
-  static const int denom = TRACING_LEN;
-  static const int fct = frac / denom;
-  //static const int fct = HUE_BIN_QN / HELIX_COLS;
-  static const int count_step = fct * TRACING_LEN / (1.f * DECAY_TIME / MATLED_TASK_TIME);
-  static const int near_max = fct * (HELIX_ROWS + HELIX_COLS);
-
-  for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led_hv[idx].val = 0u;
-  }
-  matled_status.is_refreshed = true;
+  static const int factor_numer = RGBLIGHT_LIMIT_VAL;
+  static const int factor_denom = TRACING_LEN;
+  static const int factor       = factor_numer / factor_denom;
+  static const int count_step   = factor * TRACING_LEN / (1.f * DECAY_TIME / MATLED_TASK_TIME);
+  static const int near_max     = factor * (HELIX_ROWS + HELIX_COLS);
 
   int const idx_end = pressed_end;
   int idx = (idx_end + 1) % PRESSED_LIST_NUM;
@@ -392,14 +393,18 @@ static void matled_refresh_RIPPLE(void)
     if ( it_source_pos->count <= 0u ) {
       continue;
     }
+    else if (!matled_status.is_refreshed) {
+      matled_clear_led_hv();
+      matled_status.is_refreshed = true;
+    }
 
     int far = it_source_pos->count;
-    int near = MAX(0, far - (fct*TRACING_LEN));
+    int near = MAX(0, far - (factor*TRACING_LEN));
     if (near >= near_max) {
       it_source_pos->count = 0u;
       continue;
     }
-    int outline = far + fct*1;
+    int outline = far + factor*1;
 
     FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
       int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
@@ -407,23 +412,24 @@ static void matled_refresh_RIPPLE(void)
         continue;
       }
 
-      int x = fct * (it_source_pos->key.col - col);
-      int y = fct * (it_source_pos->key.row - row);
+      // led_val = (LIMIT_VAL / LIMIT_CELL) * cell_num;
+      int x = factor * (it_source_pos->key.col - col);
+      int y = factor * (it_source_pos->key.row - row);
       int d = distance(x, y);
       if ((d < near) || (outline < d)) {
         continue;
       }
       else if (d > far) {
-        d = (far - d) * denom + far;
+        // led_val' = (LIMIT_VAL / 1) * cell_num
+        //          = (LIMIT_VAL / LIMIT_CELL) * cell_num * LIMIT_CELL
+        //          = led_val * LIMIT_CELL
+        d = (far - d) * factor_denom + far;
       }
 
       int val = rgblight_config.val - (far - d);
       matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
       matled_status.led_hv[led_idx].val     = MIN(matled_status.led_hv[led_idx].val + val, RGBLIGHT_LIMIT_VAL);
-      //matled_status.led_hv[led_idx].hue_bin = val;
-      //matled_status.led_hv[led_idx].val     = RGBLIGHT_LIMIT_VAL;
     }
-    matled_status.is_refreshed = true;
     it_source_pos->count += count_step;
   }
 }
@@ -432,14 +438,9 @@ static void matled_refresh_RIPPLE(void)
 #ifdef ENABLE_MATLED_CROSS_PATTERN
 static void matled_refresh_CROSS(void)
 {
-  static const int fct = RGBLIGHT_LIMIT_VAL / HELIX_COLS;
-  static const int count_step = fct * TRACING_LEN / (1.f * DECAY_TIME / MATLED_TASK_TIME);
-  static const int near_max = fct * (HELIX_ROWS + HELIX_COLS);
-
-  for ( int idx = 0; idx < RGBLED_NUM; idx++ ) {
-    matled_status.led_hv[idx].val = 0u;
-  }
-  matled_status.is_refreshed = true;
+  static const int factor = RGBLIGHT_LIMIT_VAL / HELIX_COLS;
+  static const int count_step = factor * TRACING_LEN / (1.f * DECAY_TIME / MATLED_TASK_TIME);
+  static const int near_max = factor * (HELIX_ROWS + HELIX_COLS);
 
   int const idx_end = pressed_end;
   int idx = (idx_end + 1) % PRESSED_LIST_NUM;
@@ -448,9 +449,13 @@ static void matled_refresh_CROSS(void)
     if ( it_source_pos->count <= 0u ) {
       continue;
     }
+    else if (!matled_status.is_refreshed) {
+      matled_clear_led_hv();
+      matled_status.is_refreshed = true;
+    }
 
     int far = it_source_pos->count;
-    int near = MAX(0, far - (fct*TRACING_LEN));
+    int near = MAX(0, far - (factor*TRACING_LEN));
     if (near >= near_max) {
       it_source_pos->count = 0u;
       continue;
@@ -466,8 +471,8 @@ static void matled_refresh_CROSS(void)
         continue;
       }
 
-      int x = fct * (it_source_pos->key.col - col);
-      int y = fct * (it_source_pos->key.row - row);
+      int x = factor * (it_source_pos->key.col - col);
+      int y = factor * (it_source_pos->key.row - row);
       int d = distance(x, y);
       if ((d < near) || (far < d)) {
         continue;
@@ -477,7 +482,6 @@ static void matled_refresh_CROSS(void)
       matled_status.led_hv[led_idx].hue_bin = it_source_pos->hue_bin;
       matled_status.led_hv[led_idx].val     = MIN(matled_status.led_hv[led_idx].val + val, RGBLIGHT_LIMIT_VAL);
     }
-    matled_status.is_refreshed = true;
     it_source_pos->count += count_step;
   }
 }
@@ -486,7 +490,7 @@ static void matled_refresh_CROSS(void)
 #ifdef ENABLE_MATLED_WAVE_PATTERN
 static void matled_refresh_WAVE(void)
 {
-  static const int fct = RGBLIGHT_LIMIT_VAL / TRACING_LEN;
+  static const int factor = RGBLIGHT_LIMIT_VAL / TRACING_LEN;
   static const int slope = -1;
   static const int ofst_step = 256 * (MATLED_TASK_TIME / 1000.f);
   static uint16_t ofst;
@@ -499,8 +503,8 @@ static void matled_refresh_WAVE(void)
       continue;
     }
 
-    int x = fct * col;
-    int y = fct * row;
+    int x = factor * col;
+    int y = factor * row;
     unsigned int d     = distance_from_line(x, y, slope, ofst);
     unsigned int d_mod = d % RGBLIGHT_LIMIT_VAL;
     int value = (d / RGBLIGHT_LIMIT_VAL) & 1
@@ -516,7 +520,7 @@ static void matled_refresh_WAVE_RB(void)
 {
   static uint16_t count;
   static const uint16_t count_step = 256 * (MATLED_TASK_TIME / 1000.f);
-  static const uint8_t fct = 128 / HELIX_COLS;
+  static const uint8_t factor = 128 / HELIX_COLS;
 
   FOREACH_MATRIX(row, col, HELIX_ROWS, HELIX_COLS) {
     int led_idx = get_ledidx_from_keypos( (keypos_t){.col=col, .row=row} );
@@ -524,7 +528,7 @@ static void matled_refresh_WAVE_RB(void)
       continue;
     }
 
-    matled_status.led_hv[led_idx].hue_bin = fct * (row + col) + count;
+    matled_status.led_hv[led_idx].hue_bin = factor * (row + col) + count;
     matled_status.led_hv[led_idx].val     = rgblight_config.val;
   }
   matled_status.is_refreshed = true;
