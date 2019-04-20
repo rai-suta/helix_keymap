@@ -6,7 +6,6 @@ This is a qmk_firmware keymap for ["Helix"](https://github.com/qmk/qmk_firmware/
 
 * LED backlight is enabled with original lighting pattern.
 * OLED is enabled.
-* Left side only keymap.
 
 ## How to Compile
 
