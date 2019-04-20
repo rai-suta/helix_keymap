@@ -317,6 +317,7 @@ static const char PROGMEM
     }
   };
 
+#define matrix_write_PSTR(matrix, str)  (sizeof(str) > 4) ? matrix_write_P((matrix), PSTR(str)) : matrix_write((matrix), (str))
 static void
 render_status(struct CharacterMatrix *matrix);
 static void
@@ -353,18 +354,18 @@ render_status(struct CharacterMatrix *matrix)
 {
   render_status_Layer(matrix);
 
-  matrix_write_P(matrix, "\n");
+  matrix_write_PSTR(matrix, "\n");
   render_status_UserMod(matrix);
 
   #ifdef MATRIX_SCAN_RUN_TIME
-    matrix_write_P(matrix, "\n");
+    matrix_write_PSTR(matrix, "\n");
     render_status_RunTime(matrix);
   #endif
 
   uint32_t layer = layer_state | default_layer_state;
   if ( layer & (1<<KL_(CONFIG)) ) {
     #ifdef RGBLIGHT_ENABLE
-      matrix_write_P(matrix, "\n");
+      matrix_write_PSTR(matrix, "\n");
       render_status_LedParams(matrix);
     #endif
   }
@@ -380,15 +381,15 @@ render_status_Layer(struct CharacterMatrix *matrix)
 {
   uint32_t layer = layer_state | default_layer_state;
 
-  matrix_write_P(matrix, PSTR("Layer:"));
+  matrix_write_PSTR(matrix, "Layer:");
   if ( layer == 0u ) {
-      matrix_write_P(matrix, " ");
+      matrix_write_PSTR(matrix, " ");
       matrix_write_P(matrix, layerNameStr_P(0));
   }
   else {
     for ( int layer_idx = 0; layer_idx < KL_NUM; layer_idx++ ) {
       if ( layer & (1<<layer_idx) ) {
-        matrix_write_P(matrix, " ");
+        matrix_write_PSTR(matrix, " ");
         matrix_write_P(matrix, layerNameStr_P(layer_idx));
       }
     }
@@ -398,10 +399,10 @@ render_status_Layer(struct CharacterMatrix *matrix)
 static void
 render_status_UserMod(struct CharacterMatrix *matrix)
 {
-  matrix_write_P(matrix, PSTR("UserMod:"));
+  matrix_write_PSTR(matrix, "UserMod:");
   for ( int mod_idx = 0; mod_idx < UM_NUM; mod_idx++ ) {
     if ( user_modifier_bits & (1<<mod_idx) ) {
-      matrix_write_P(matrix, " ");
+      matrix_write_PSTR(matrix, " ");
       matrix_write_P(matrix, userModNameStr_P(mod_idx));
     }
   }
@@ -415,7 +416,7 @@ render_status_LedParams(struct CharacterMatrix *matrix)
   char buf[16];
   const size_t sizeof_buf = sizeof(buf);
 
-  matrix_write_P(matrix, PSTR("LedStt"));
+  matrix_write_PSTR(matrix, "LedStt");
 
   #ifdef MATRIXLED_H
     int led_mode = matled_get_mode();
@@ -448,7 +449,7 @@ render_status_RunTime(struct CharacterMatrix *matrix)
   char buf[16];
   const size_t sizeof_buf = sizeof(buf);
 
-  matrix_write_P(matrix, PSTR("RunTime:"));
+  matrix_write_PSTR(matrix, "RunTime:");
 
   if (snprintf(buf, sizeof_buf, "%ld,", matrix_scan_run_time.cycle_time) > 0) {
     matrix_write(matrix, buf);
